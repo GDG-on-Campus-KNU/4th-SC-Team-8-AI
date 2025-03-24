@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>API Test & YouTube 자막 요청</title>
+  <script>
+    // GET 요청을 보내는 기존 함수
+    function sendGetRequest() {
+      fetch('http://34.64.54.31:5000/test')
+        .then(response => response.json())
+        .then(data => {
+          console.log(data);
+          document.getElementById("response").innerText = JSON.stringify(data, null, 2);
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          document.getElementById("response").innerText = 'Error: ' + error;
+        });
+    }
+
+    // YouTube 자막 요청(POST) 함수
+    function sendSubtitleRequest() {
+      // 입력된 URL과 언어 값을 가져옴
+      const youtubeUrl = document.getElementById("youtubeUrl").value;
+      const lang = document.getElementById("lang").value || "ko";
+
+      fetch('http://34.64.54.31:5000/get_subtitle', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ url: youtubeUrl, lang: lang })
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log(data);
+        document.getElementById("subtitleResponse").innerText = JSON.stringify(data, null, 2);
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        document.getElementById("subtitleResponse").innerText = 'Error: ' + error;
+      });
+    }
+  </script>
+</head>
+<body>
+  <h1>API GET Request Test</h1>
+  <button onclick="sendGetRequest()">Send GET Request</button>
+  <pre id="response"></pre>
+
+  <hr>
+
+  <h2>YouTube 자막 요청 (Closed Caption)</h2>
+  <div>
+    <label for="youtubeUrl">YouTube URL:</label>
+    <input type="text" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=...">
+  </div>
+  <div>
+    <label for="lang">자막 언어 (예: ko):</label>
+    <input type="text" id="lang" value="ko">
+  </div>
+  <button onclick="sendSubtitleRequest()">Send Subtitle Request</button>
+  <pre id="subtitleResponse"></pre>
+</body>
+</html>
