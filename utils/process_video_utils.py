@@ -13,8 +13,8 @@ from db.session import SessionLocal
 
 mp_holistic = mp.solutions.holistic
 
-async def process_video(video_url: str):
-    logger.info(f"비디오 처리 시작: {video_url}")
+async def process_video(request_url : str, video_url: str):
+    logger.info(f"비디오 처리 시작: {request_url}")
 
     cap = await asyncio.to_thread(cv2.VideoCapture, video_url)
     if not cap.isOpened():
@@ -107,20 +107,27 @@ async def process_video(video_url: str):
     except Exception as e:
         logger.error(f"결과 저장 실패: {e}", exc_info=True)
 
-    # 용량 확인인
+    # 용량 확인
     json_string = json.dumps(result, ensure_ascii=False)
-    logger.info(f"✅ landmark JSON 크기: {len(json_string)} bytes ≈ {len(json_string)/1024/1024:.2f} MB")    
+    logger.info(f"landmark JSON 크기: {len(json_string)} bytes ≈ {len(json_string)/1024/1024:.2f} MB")    
 
     # DB 저장
     db = SessionLocal() 
     try:
         landmark_data = LandmarkCreate(
             landmark=json.dumps(result, ensure_ascii=False),
-            youtube_link=video_url
+            youtube_link=request_url
         )
-        create_landmark(db, landmark=landmark_data)
-        logger.info(f"[DB 저장 완료] video_url: {video_url}")
+        saved_landmark = create_landmark(db, landmark=landmark_data)
+
+        if saved_landmark and saved_landmark.youtube_link == request_url:
+            logger.info(f"[DB 저장 완료 ] id={saved_landmark.id}, video_url={saved_landmark.youtube_link}")
+        else:
+            logger.warning(f"[DB 저장 확인 실패 ] 반환값이 예상과 다름")
+
     except Exception as e:
+        db.rollback()
         logger.error(f"[DB 저장 실패] {e}", exc_info=True)
+
     finally:
         db.close()
