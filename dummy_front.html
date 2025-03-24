@@ -38,23 +38,6 @@
                 document.getElementById("updates").innerText = "Error: " + error;
             }
         });
-
-        // WebSocket 연결 (실시간 FPS 업데이트 수신)
-        const ws = new WebSocket("ws://localhost:5000/ws");
-        ws.onopen = function() {
-            console.log("WebSocket 연결됨.");
-        };
-        ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            const updatesDiv = document.getElementById("updates");
-            updatesDiv.innerHTML += `<p>[${new Date(data.timestamp * 1000).toLocaleTimeString()}] FPS: ${data.fps.toFixed(2)}</p>`;
-        };
-        ws.onerror = function(error) {
-            console.error("WebSocket 에러:", error);
-        };
-        ws.onclose = function() {
-            console.log("WebSocket 연결 종료됨.");
-        };
     </script>
 </body>
 </html>

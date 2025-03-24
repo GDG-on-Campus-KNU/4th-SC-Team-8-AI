@@ -26,7 +26,7 @@ async def test_endpoint():
 async def process_youtube(req: YouTubeRequest):
     try:
         video_url = extract_youtube_stream_url(req.url)
-        asyncio.create_task(process_video(video_url))
+        asyncio.create_task(process_video(req.url, video_url))
         return {"status": "processing started", "video_url": video_url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
