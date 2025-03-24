@@ -101,7 +101,7 @@ async def process_video(request_url : str, video_url: str):
 
     try:
         with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+            json.dump(result, f, ensure_ascii=False, separators=(',', ':'))
 
         logger.info(f"결과 저장 완료: {output_file}")
     except Exception as e:

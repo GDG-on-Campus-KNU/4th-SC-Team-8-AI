@@ -1,4 +1,4 @@
-python -m uvicorn main:app --reload --host 0.0.0.0 으로 실행
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 5000 으로 실행
 
 테스트페이지 이용해 자막 요청 가능
 
