@@ -11,3 +11,12 @@ class YouTubeRequest(BaseModel):
         if not re.match(r"^https://www\.youtube\.com/watch\?v=[\w-]+$", v):
             raise ValueError("유튜브 링크 형식이 올바르지 않습니다.")
         return v
+
+# 자막 요청을 위한 모델 (URL과 언어)
+class SubtitleRequest(BaseModel):
+    url: str
+    lang: str = "ko"
+    
+class LandmarkCreate(BaseModel):
+    landmark: str
+    youtube_link: str

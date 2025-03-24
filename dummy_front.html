@@ -27,7 +27,7 @@
                 return;
             }
             try {
-                const response = await fetch("http://localhost:8000/process_youtube", {
+                const response = await fetch("http://localhost:5000/process_youtube", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ url: youtubeUrl })
@@ -40,7 +40,7 @@
         });
 
         // WebSocket 연결 (실시간 FPS 업데이트 수신)
-        const ws = new WebSocket("ws://localhost:8000/ws");
+        const ws = new WebSocket("ws://localhost:5000/ws");
         ws.onopen = function() {
             console.log("WebSocket 연결됨.");
         };
