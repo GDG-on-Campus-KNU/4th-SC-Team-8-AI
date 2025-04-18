@@ -2,9 +2,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from utils.youtube_utils import extract_youtube_stream_url
 from utils.process_video_utils import process_video
-from utils.youtube_subtitle import get_subtitle_text
+from utils.youtube_subtitle_utils import get_subtitle_text
 from models.request_models import YouTubeRequest, SubtitleRequest
 from models.response_models import ProcessResponse, SubtitleResponse, TestResponse
+
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from db.session import get_db
+from crud.game import get_game_by_url
 
 import uvicorn
 import asyncio
@@ -23,11 +28,24 @@ async def test_endpoint():
     return {"status": "success", "message": "API is reachable"}
 
 @app.post("/process_youtube", response_model=ProcessResponse)
-async def process_youtube(req: YouTubeRequest):
+async def process_youtube(req: YouTubeRequest, db: Session = Depends(get_db)):
     try:
+        existing_game = get_game_by_url(db, youtube_link=req.url)
+        if existing_game:
+            return {
+                "status": "already processed",
+                "video_url": req.url
+            }
+
         video_url = extract_youtube_stream_url(req.url)
+
         asyncio.create_task(process_video(req.url, video_url))
-        return {"status": "processing started", "video_url": video_url}
+
+        return {
+            "status": "processing started",
+            "video_url": video_url
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -4,7 +4,7 @@ from sqlalchemy.dialects.mysql import LONGTEXT
 
 Base = declarative_base()
 
-class Landmark(Base):
+class Game(Base):
     __tablename__ = "game"  
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)  # auto_increment, primary key

@@ -1,5 +1,5 @@
 import yt_dlp
-from utils.logging_utils import logger  # 로그 설정 가져오기
+from utils.logging_utils import logger
 
 def extract_youtube_stream_url(youtube_url: str) -> str:
     try:

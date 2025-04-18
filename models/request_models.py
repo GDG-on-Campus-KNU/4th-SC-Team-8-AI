@@ -17,6 +17,6 @@ class SubtitleRequest(BaseModel):
     url: str
     lang: str = "ko"
     
-class LandmarkCreate(BaseModel):
+class GameCreate(BaseModel):
     landmark: str
     youtube_link: str

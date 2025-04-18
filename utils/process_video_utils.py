@@ -7,8 +7,8 @@ import asyncio
 
 from utils.landmark_utils import landmark_list_to_dict, normalize_landmarks
 from utils.logging_utils import logger
-from models.request_models import LandmarkCreate
-from crud.landmark import create_landmark
+from models.request_models import GameCreate
+from crud.game import create_game
 from db.session import SessionLocal
 
 mp_holistic = mp.solutions.holistic
@@ -114,14 +114,14 @@ async def process_video(request_url : str, video_url: str):
     # DB 저장
     db = SessionLocal() 
     try:
-        landmark_data = LandmarkCreate(
+        game_data = GameCreate(
             landmark=json.dumps(result, ensure_ascii=False),
             youtube_link=request_url
         )
-        saved_landmark = create_landmark(db, landmark=landmark_data)
+        saved_game = create_game(db, game=game_data)
 
-        if saved_landmark and saved_landmark.youtube_link == request_url:
-            logger.info(f"[DB 저장 완료 ] id={saved_landmark.id}, video_url={saved_landmark.youtube_link}")
+        if saved_game and saved_game.youtube_link == request_url:
+            logger.info(f"[DB 저장 완료 ] id={saved_game.id}, video_url={saved_game.youtube_link}")
         else:
             logger.warning(f"[DB 저장 확인 실패 ] 반환값이 예상과 다름")
 
