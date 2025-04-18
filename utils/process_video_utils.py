@@ -13,13 +13,20 @@ from db.session import SessionLocal
 
 mp_holistic = mp.solutions.holistic
 
-async def process_video(request_url : str, video_url: str):
+async def process_video(request_url: str, video_url: str):
     logger.info(f"비디오 처리 시작: {request_url}")
 
     cap = await asyncio.to_thread(cv2.VideoCapture, video_url)
     if not cap.isOpened():
         logger.error("비디오 스트림 열기 실패")
         return
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if not fps or fps <= 0:
+        logger.error("FPS 정보를 가져오지 못했습니다. timestamp 계산 불가 → 처리 중단")
+        return 
+
+    logger.info(f'FPS: {fps:.3f}')
 
     holistic = mp_holistic.Holistic(
         static_image_mode=False,
@@ -58,16 +65,17 @@ async def process_video(request_url : str, video_url: str):
 
             offset_x, offset_y = 0.5 - nose_x, 0.5 - nose_y
             all_lm = []
-            
             for lm in [pose_lm, face_lm, left_lm, right_lm]:
                 if lm:
                     all_lm.extend(lm)
-                    
             if all_lm:
                 normalize_landmarks(all_lm, offset_x, offset_y)
 
+            timestamp_ms = int(frame_count / fps * 1000)
+
             frame_data = {
                 "frame": frame_count,
+                "timestamp_ms": timestamp_ms,
                 "pose_landmarks": landmark_list_to_dict(pose_lm) if pose_lm else None,
                 "face_landmarks": landmark_list_to_dict(face_lm) if face_lm else None,
                 "left_hand_landmarks": landmark_list_to_dict(left_lm) if left_lm else None,
@@ -84,17 +92,17 @@ async def process_video(request_url : str, video_url: str):
         holistic.close()
 
     total_time = time.time() - start_time
-    fps = frame_count / total_time if total_time > 0 else 0
+    avg_fps = frame_count / total_time if total_time > 0 else 0
 
     result = {
         "status": "processed",
         "total_frames_processed": frame_count,
         "total_processing_time_sec": total_time,
-        "average_fps": fps,
+        "average_fps": avg_fps,
+        "fps_used": fps,
         "data": processed_frames
     }
 
-    # JSON 저장 (임시)
     output_dir = "output/youtube_result"
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, f"result_{int(time.time())}.json")
@@ -102,17 +110,14 @@ async def process_video(request_url : str, video_url: str):
     try:
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, separators=(',', ':'))
-
         logger.info(f"결과 저장 완료: {output_file}")
     except Exception as e:
         logger.error(f"결과 저장 실패: {e}", exc_info=True)
 
-    # 용량 확인
     json_string = json.dumps(result, ensure_ascii=False)
     logger.info(f"landmark JSON 크기: {len(json_string)} bytes ≈ {len(json_string)/1024/1024:.2f} MB")    
 
-    # DB 저장
-    db = SessionLocal() 
+    db = SessionLocal()
     try:
         game_data = GameCreate(
             landmark=json.dumps(result, ensure_ascii=False),
@@ -124,10 +129,8 @@ async def process_video(request_url : str, video_url: str):
             logger.info(f"[DB 저장 완료 ] id={saved_game.id}, video_url={saved_game.youtube_link}")
         else:
             logger.warning(f"[DB 저장 확인 실패 ] 반환값이 예상과 다름")
-
     except Exception as e:
         db.rollback()
         logger.error(f"[DB 저장 실패] {e}", exc_info=True)
-
     finally:
         db.close()
