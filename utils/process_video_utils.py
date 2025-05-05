@@ -1,136 +1,105 @@
-import cv2
+# utils/process_video_utils.py
+from __future__ import annotations
+import os, json, time, cv2, traceback
+from pathlib import Path
+from typing import List, Dict
 import mediapipe as mp
-import time
-import os
-import json
-import asyncio
 
-from utils.landmark_utils import landmark_list_to_dict, normalize_landmarks
 from utils.logging_utils import logger
-from models.request_models import GameCreate
-from crud.game import create_game
-from db.session import SessionLocal
+from utils.common import extract_yt_id
+from utils.landmark_utils import (
+    landmark_list_to_dict, normalize_landmarks
+)
 
-mp_holistic = mp.solutions.holistic
+OUT_DIR = Path("output/youtube_result")
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-async def process_video(request_url: str, video_url: str):
-    logger.info(f"비디오 처리 시작: {request_url}")
+mp_holistic = mp.solutions.holistic.Holistic(
+    static_image_mode=False,
+    model_complexity=1,
+    enable_segmentation=False,
+    refine_face_landmarks=False,
+)
 
-    cap = await asyncio.to_thread(cv2.VideoCapture, video_url)
+def process_video(request_url: str, video_url: str) -> None:
+    """동기 함수 — asyncio.to_thread 로 실행"""
+    request_url = str(request_url)
+    youtube_id  = extract_yt_id(request_url) or "unknown"
+    ts_start    = int(time.time())
+    json_path   = OUT_DIR / f"{youtube_id}_{ts_start}.json"
+    logger.info("[비디오 처리 시작] %s", youtube_id)
+
+    cap = cv2.VideoCapture(video_url)
     if not cap.isOpened():
-        logger.error("비디오 스트림 열기 실패")
+        logger.error("[VideoCapture 실패] %s", video_url)
         return
 
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if not fps or fps <= 0:
-        logger.error("FPS 정보를 가져오지 못했습니다. timestamp 계산 불가 → 처리 중단")
-        return 
+    fps          = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    processed_frames: List[Dict] = []
 
-    logger.info(f'FPS: {fps:.3f}')
-
-    holistic = mp_holistic.Holistic(
-        static_image_mode=False,
-        model_complexity=1,
-        enable_segmentation=False,
-        refine_face_landmarks=True
-    )
-
-    processed_frames = []
-    frame_count = 0
-    start_time = time.time()
-
+    frame_ms  = 1_000 / fps
+    frame_idx = 0
+    last_pct  = -1
     try:
         while True:
-            ret, frame = await asyncio.to_thread(cap.read)
+            ret, frame = cap.read()
             if not ret:
                 break
+            ts_ms = int(frame_idx * frame_ms)
 
-            frame_count += 1
-            if frame_count % 1000 == 0:
-                logger.info(f"{frame_count} 프레임 처리 중...")
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            res = mp_holistic.process(rgb)
 
-            image_rgb = await asyncio.to_thread(cv2.cvtColor, frame, cv2.COLOR_BGR2RGB)
-            results = await asyncio.to_thread(holistic.process, image_rgb)
+            pose_lm   = res.pose_landmarks
+            left_lm   = res.left_hand_landmarks
+            right_lm  = res.right_hand_landmarks
+            face_lm   = res.face_landmarks
 
-            pose_lm = results.pose_landmarks.landmark if results.pose_landmarks else []
-            face_lm = results.face_landmarks.landmark if results.face_landmarks else []
-            left_lm = results.left_hand_landmarks.landmark if results.left_hand_landmarks else []
-            right_lm = results.right_hand_landmarks.landmark if results.right_hand_landmarks else []
+            has_any = any([pose_lm, left_lm, right_lm, face_lm])
 
-            nose_x, nose_y = 0.5, 0.5
-            if face_lm:
-                nose_x, nose_y = face_lm[1].x, face_lm[1].y
-            elif pose_lm:
-                nose_x, nose_y = pose_lm[0].x, pose_lm[0].y
+            if has_any:
+                frame_data = {
+                    "frame": frame_idx,
+                    "timestamp_ms": ts_ms,
+                    "pose_landmarks": normalize_landmarks(landmark_list_to_dict(pose_lm)) if pose_lm else None,
+                    "face_landmarks": landmark_list_to_dict(face_lm) if face_lm else None,
+                    "left_hand_landmarks": landmark_list_to_dict(left_lm) if left_lm else None,
+                    "right_hand_landmarks": landmark_list_to_dict(right_lm) if right_lm else None
+                }
+                processed_frames.append(frame_data)
 
-            offset_x, offset_y = 0.5 - nose_x, 0.5 - nose_y
-            all_lm = []
-            for lm in [pose_lm, face_lm, left_lm, right_lm]:
-                if lm:
-                    all_lm.extend(lm)
-            if all_lm:
-                normalize_landmarks(all_lm, offset_x, offset_y)
+            frame_idx += 1  # 다음 프레임 인덱스
 
-            timestamp_ms = int(frame_count / fps * 1000)
+            # ───── 진행률(%) 한 줄 갱신 ─────
+            if total_frames:
+                pct = int(frame_idx / total_frames * 100)
+                if pct != last_pct and pct % 2 == 0:  # 0,2,4,…
+                    print(f"\r[Holistic] {youtube_id}  {pct:3d}% 진행 중...", end="")
+                    last_pct = pct
 
-            frame_data = {
-                "frame": frame_count,
-                "timestamp_ms": timestamp_ms,
-                "pose_landmarks": landmark_list_to_dict(pose_lm) if pose_lm else None,
-                "face_landmarks": landmark_list_to_dict(face_lm) if face_lm else None,
-                "left_hand_landmarks": landmark_list_to_dict(left_lm) if left_lm else None,
-                "right_hand_landmarks": landmark_list_to_dict(right_lm) if right_lm else None
-            }
-            processed_frames.append(frame_data)
-
-            await asyncio.sleep(0)
-
-    except Exception as e:
-        logger.error(f"프레임 처리 중 오류 발생: {e}", exc_info=True)
+    except Exception:
+        logger.error("[Holistic 처리 예외]\n%s", traceback.format_exc())
     finally:
         cap.release()
-        holistic.close()
+        if total_frames:
+            pct = int(frame_idx / total_frames * 100)
+            if pct != last_pct and pct % 2 == 0:
+                logger.info("[Holistic] %s %3d%%", youtube_id, pct)
 
-    total_time = time.time() - start_time
-    avg_fps = frame_count / total_time if total_time > 0 else 0
-
-    result = {
-        "status": "processed",
-        "total_frames_processed": frame_count,
-        "total_processing_time_sec": total_time,
-        "average_fps": avg_fps,
-        "fps_used": fps,
-        "data": processed_frames
-    }
-
-    output_dir = "output/youtube_result"
-    os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, f"result_{int(time.time())}.json")
-
-    try:
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, separators=(',', ':'))
-        logger.info(f"결과 저장 완료: {output_file}")
-    except Exception as e:
-        logger.error(f"결과 저장 실패: {e}", exc_info=True)
-
-    json_string = json.dumps(result, ensure_ascii=False)
-    logger.info(f"landmark JSON 크기: {len(json_string)} bytes ≈ {len(json_string)/1024/1024:.2f} MB")    
-
-    db = SessionLocal()
-    try:
-        game_data = GameCreate(
-            landmark=json.dumps(result, ensure_ascii=False),
-            youtube_link=request_url
+    with open(json_path, "w", encoding="utf-8") as f:
+        # 공백·줄바꿈 없이(minify) 저장
+        json.dump(
+            {
+                "youtube_link": request_url,
+                "youtube_id": youtube_id,
+                "fps": fps,
+                "data": processed_frames,
+            },
+            f,
+            ensure_ascii=False,
+            separators=(",", ":")  # 용량 최소화를 위해 공백 제거
         )
-        saved_game = create_game(db, game=game_data)
 
-        if saved_game and saved_game.youtube_link == request_url:
-            logger.info(f"[DB 저장 완료 ] id={saved_game.id}, video_url={saved_game.youtube_link}")
-        else:
-            logger.warning(f"[DB 저장 확인 실패 ] 반환값이 예상과 다름")
-    except Exception as e:
-        db.rollback()
-        logger.error(f"[DB 저장 실패] {e}", exc_info=True)
-    finally:
-        db.close()
+    logger.info("[결과 저장 완료] %s (프레임 %d)",
+                json_path, len(processed_frames))

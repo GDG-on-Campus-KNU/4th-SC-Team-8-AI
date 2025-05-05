@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>수어 동화 따라하기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 p-6">
+<!-- URL·버튼 -->
+<div class="space-x-2">
+  <input id="url" class="w-96 px-2 py-1 rounded text-gray-900"
+         placeholder="유튜브 URL" />
+  <button id="prepBtn"
+          class="bg-amber-600 hover:bg-amber-700 px-4 py-1 rounded">
+    준비 시작
+  </button>
+  <button id="playBtn" disabled
+          class="bg-indigo-600 hover:bg-indigo-700 px-4 py-1 rounded">
+    영상 재생
+  </button>
+</div>
+
+<!-- 안내문 + 평가 누적 -->
+<div class="mt-4 flex gap-6">
+  <div id="msg" class="text-lg font-bold text-amber-400 grow"></div>
+  <ul id="scoreLog" class="space-y-0.5 text-sm text-lime-400"></ul>
+</div>
+
+<!-- 영상 / 웹캠 -->
+<div class="flex gap-4 mt-6">
+  <div class="flex-1"><div id="player"
+       class="w-full aspect-video bg-black rounded"></div></div>
+  <div class="flex-1"><video id="webcam" autoplay playsinline muted
+       class="w-full aspect-video bg-black rounded hidden"></video></div>
+</div>
+
+<script>
+const API = "http://localhost:5000";
+let youtubeId="", videoId="", captions=[];
+let player=null, idx=0, polling=null, webcam=null, hasWebcam=false;
+
+/* -------------- 준비 버튼 -------------- */
+document.getElementById("prepBtn").onclick = async () => {
+  const url = document.getElementById("url").value.trim();
+  if (!url) return alert("URL 입력");
+
+  /* 1) 준비 시작 */
+  await fetch(`${API}/prepare_youtube`,{
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({url})
+  });
+  document.getElementById("msg").textContent = "⏳ 랜드마크 추출 중…";
+
+  /* 2) 자막 */
+  const sub = await fetch(`${API}/get_subtitle`,{
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({url,lang:"ko"})
+  }).then(r=>r.json());
+  captions = sub.captions;
+  youtubeId = videoId = sub.youtube_id;
+
+  /* 3) 준비 완료 폴링 */
+  polling = setInterval(async ()=>{
+    const js = await fetch(`${API}/check_ready?youtube_id=${youtubeId}`)
+                      .then(r=>r.json());
+    if (js.ready) {
+      clearInterval(polling);
+      document.getElementById("msg").textContent="✅ 준비 완료! '영상 재생' 클릭";
+      document.getElementById("playBtn").disabled=false;
+    }
+  }, 3000);
+};
+
+/* -------------- 영상 재생 버튼 -------------- */
+document.getElementById("playBtn").onclick = async () => {
+  document.getElementById("playBtn").disabled=true;
+  player = new YT.Player("player",{
+    videoId,
+    playerVars:{controls:0,autoplay:1,mute:1,playsinline:1,
+      modestbranding:1,rel:0,fs:0,disablekb:1},
+    events:{onReady:()=>{idx=0;next();}}
+  });
+  try{
+    webcam = await navigator.mediaDevices.getUserMedia({video:true});
+    hasWebcam=true;
+    const v=document.getElementById("webcam");
+    v.srcObject=webcam; v.classList.remove("hidden");
+  }catch{hasWebcam=false;}
+};
+
+/* -------------- 플레이 루프 -------------- */
+function next(){
+  if(idx>=captions.length){
+    document.getElementById("msg").textContent="🎉 끝!";
+    return;
+  }
+  const c=captions[idx], dur=c.dur||3;
+  player.seekTo(c.start,true); player.playVideo();
+  document.getElementById("msg").textContent=c.text.trim()?c.text:"…";
+  setTimeout(()=>{player.pauseVideo(); afterPause(c);},dur*1000);
+}
+
+async function afterPause(c){
+  if(!c.text.trim()||!hasWebcam){idx++;setTimeout(next,500);return;}
+
+  /* 녹화 */
+  const rec=new MediaRecorder(webcam,{mimeType:"video/webm"});
+  const chunks=[]; rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  rec.start(); setTimeout(()=>rec.stop(),c.dur*1000);
+
+  rec.onstop=async()=>{
+    const f=new FormData();
+    f.append("video", new Blob(chunks,{type:"video/webm"}),"cam.webm");
+    f.append("youtube_id",youtubeId);
+    f.append("caption_start",c.start); f.append("caption_dur",c.dur);
+
+    const res=await fetch(`${API}/evaluate_caption`,{method:"POST",body:f})
+                    .then(r=>r.json())
+                    .catch(()=>({rating:"error",score:9999}));
+
+    /* 안내문 텍스트 */
+    document.getElementById("msg").textContent=
+      `⭐ ${res.rating.toUpperCase()} (${Math.round(res.score)})`;
+
+    /* ★ 누적 리스트에 추가 ★ */
+    const li=document.createElement("li");
+    li.textContent=`#${idx+1}  ${res.rating.toUpperCase()}  (${Math.round(res.score)})`;
+    document.getElementById("scoreLog").appendChild(li);
+
+    idx++; setTimeout(next,800);
+  };
+}
+</script>
+</body>
+</html>
