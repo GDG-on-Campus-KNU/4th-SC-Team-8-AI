@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Landmark Comparison Dummy Front</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f4f4f4;
+    }
+    #container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #video-row {
+      display: flex;
+      justify-content: space-between;
+      width: 80%;
+      margin-top: 20px;
+    }
+    #player, .video-wrapper video {
+      width: 100%;
+      height: 300px;
+      border: 1px solid #ccc;
+    }
+    .video-wrapper {
+      width: 45%;
+      position: relative;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #score-display {
+      margin-top: 20px;
+      background-color: #fff;
+      padding: 10px;
+      border-radius: 5px;
+      width: 50%;
+      text-align: center;
+    }
+    #subtitle-display, #timestamp-display {
+      margin-top: 10px;
+      font-style: italic;
+      color: #333;
+      text-align: center;
+      background-color: rgba(255, 255, 255, 0.8);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body>
+  <div id="container">
+    <h2>Landmark Score Test</h2>
+    <input type="text" id="videoUrlInput" placeholder="Enter YouTube video URL" style="width: 60%; padding: 10px;">
+    <button onclick="loadVideo()">Load Video</button>
+
+    <div id="video-row">
+      <div style="width: 45%; display: flex; flex-direction: column; align-items: center;">
+        <div id="player"></div>
+        <div id="subtitle-display"></div>
+        <div id="timestamp-display"></div>
+      </div>
+      <div class="video-wrapper">
+        <video id="webcamVideo" autoplay muted playsinline></video>
+        <canvas id="overlayCanvas"></canvas>
+      </div>
+    </div>
+
+    <div id="score-display">
+      <h3>Scores</h3>
+      <div id="scoreLog"></div>
+    </div>
+  </div>
+
+  <script>
+    let player;
+    let subtitleData = [];
+    let socket = null;
+    let subtitleTimer = null;
+    const videoInput = document.getElementById("videoUrlInput");
+    const webcamVideo = document.getElementById("webcamVideo");
+    const canvas = document.getElementById("overlayCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreLog = document.getElementById("scoreLog");
+    const subtitleDisplay = document.getElementById("subtitle-display");
+    const timestampDisplay = document.getElementById("timestamp-display");
+
+    let currentSubtitleIndex = -1;
+    let collectedLandmarks = [];
+
+    function loadVideo() {
+      const url = videoInput.value;
+      const videoId = url.split("v=")[1]?.split("&")[0];
+      if (!videoId) return;
+
+      if (player) {
+        player.loadVideoById(videoId);
+      } else {
+        player = new YT.Player('player', {
+          height: '300',
+          width: '100%',
+          videoId: videoId,
+          events: {
+            'onReady': () => pollSubtitleTime(url)
+          }
+        });
+      }
+
+      fetch("http://localhost:8000/get_subtitle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, lang: "ko" })
+      })
+      .then(res => res.json())
+      .then(result => {
+        const events = result.subtitle?.events;
+        if (Array.isArray(events)) {
+          subtitleData = events.map(e => ({
+            start: e.tStartMs,
+            end: e.tStartMs + (e.dDurationMs || 1000),
+            text: (e.segs || []).map(s => s.utf8).join('') || ""
+          }));
+        }
+        startWebSocket(url);
+      })
+      .catch(err => console.error("자막 로드 실패:", err));
+    }
+
+    function pollSubtitleTime() {
+      if (subtitleTimer) clearInterval(subtitleTimer);
+      subtitleTimer = setInterval(() => {
+        if (!player || typeof player.getCurrentTime !== 'function') return;
+        const currentMs = Math.floor(player.getCurrentTime() * 1000);
+
+        const nextIndex = subtitleData.findIndex(sub => currentMs >= sub.start && currentMs <= sub.end);
+        if (nextIndex !== -1) {
+          if (nextIndex !== currentSubtitleIndex) {
+            if (collectedLandmarks.length > 0 && currentSubtitleIndex !== -1) {
+              const prev = subtitleData[currentSubtitleIndex];
+              socket?.send(JSON.stringify({
+                video_url: videoInput.value,
+                start_ms: prev.start,
+                end_ms: prev.end,
+                user_landmark: collectedLandmarks,
+                is_last_sentence: false
+              }));
+              collectedLandmarks = [];
+            }
+            currentSubtitleIndex = nextIndex;
+          }
+        }
+
+        const activeSub = subtitleData[nextIndex];
+        subtitleDisplay.innerText = activeSub ? activeSub.text : "";
+        timestampDisplay.innerText = `⏱️ 현재 시점: ${currentMs} ms`;
+      }, 300);
+    }
+
+    function startWebcam() {
+      navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+        webcamVideo.srcObject = stream;
+        const camera = new Camera(webcamVideo, {
+          onFrame: async () => {
+            if (webcamVideo.videoWidth && webcamVideo.videoHeight) {
+              canvas.width = webcamVideo.videoWidth;
+              canvas.height = webcamVideo.videoHeight;
+              canvas.style.width = webcamVideo.offsetWidth + "px";
+              canvas.style.height = webcamVideo.offsetHeight + "px";
+            }
+            await hands.send({ image: webcamVideo });
+          },
+          width: 640,
+          height: 480
+        });
+        camera.start();
+      });
+    }
+
+    const hands = new Hands({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5
+    });
+
+    hands.onResults(results => {
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (results.multiHandLandmarks) {
+        results.multiHandLandmarks.forEach(landmarks => {
+          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 3 });
+          drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 2 });
+        });
+
+        let landmark = {};
+        results.multiHandLandmarks.forEach((hand, handIndex) => {
+          hand.forEach((pt, i) => {
+            landmark[`x${handIndex}_${i}`] = pt.x;
+            landmark[`y${handIndex}_${i}`] = pt.y;
+          });
+        });
+
+        // ✅ timestamp_ms: 정확한 영상 시점
+        if (player && typeof player.getCurrentTime === 'function' && currentSubtitleIndex !== -1) {
+          const currentMs = Math.floor(player.getCurrentTime() * 1000);
+          const sub = subtitleData[currentSubtitleIndex];
+          if (currentMs >= sub.start && currentMs <= sub.end) {
+            collectedLandmarks.push({
+              timestamp_ms: currentMs,
+              landmark: landmark
+            });
+          }
+        }
+      }
+      ctx.restore();
+    });
+
+    function startWebSocket(videoUrl) {
+      socket = new WebSocket(`ws://localhost:8000/ws/landmark?video_url=${encodeURIComponent(videoUrl)}`);
+      socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.sentence_score !== undefined) {
+          scoreLog.innerHTML += `<p>Score: ${msg.sentence_score}</p>`;
+        }
+        if (msg.final_scores) {
+          scoreLog.innerHTML += `<p><strong>Final Scores:</strong> ${msg.final_scores.join(", ")}</p>`;
+        }
+      };
+      socket.onerror = err => console.error("WebSocket error:", err);
+    }
+
+    startWebcam();
+  </script>
+</body>
+</html>

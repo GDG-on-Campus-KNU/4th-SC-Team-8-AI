@@ -7,7 +7,7 @@ class ProcessResponse(BaseModel):
 
 class SubtitleResponse(BaseModel):
     status: str
-    subtitle: str
+    subtitle: dict
 
 class TestResponse(BaseModel):
     status: str
