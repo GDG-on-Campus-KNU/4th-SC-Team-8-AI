@@ -76,8 +76,6 @@ async def process_video(request_url: str, video_url: str):
             frame_data = {
                 "frame": frame_count,
                 "timestamp_ms": timestamp_ms,
-                "pose_landmarks": landmark_list_to_dict(pose_lm) if pose_lm else None,
-                "face_landmarks": landmark_list_to_dict(face_lm) if face_lm else None,
                 "left_hand_landmarks": landmark_list_to_dict(left_lm) if left_lm else None,
                 "right_hand_landmarks": landmark_list_to_dict(right_lm) if right_lm else None
             }
