@@ -1,12 +1,12 @@
 fastapi==0.115.11
-uvicorn==0.34.0
 mediapipe==0.10.21
 opencv-python==4.11.0.86
 opencv-contrib-python==4.11.0.86
 uvicorn[standard]==0.34.0
 SQLAlchemy==2.0.39
 dotenv==0.9.9
-PyMySQL==1.1.1
 requests==2.32.3
-
+asyncmy==0.2.10
+fastdtw==0.3.4
+ 
 git+https://github.com/yt-dlp/yt-dlp.git

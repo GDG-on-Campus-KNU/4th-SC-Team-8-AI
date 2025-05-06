@@ -1,15 +1,14 @@
-from fastapi import FastAPI, HTTPException, WebSocket, Query
+from fastapi import FastAPI, HTTPException, WebSocket, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from utils.youtube_utils import extract_youtube_stream_url
 from utils.process_video_utils import process_video
 from utils.youtube_subtitle_utils import get_subtitle_text
 from models.request_models import YouTubeRequest, SubtitleRequest
 from models.response_models import ProcessResponse, SubtitleResponse, TestResponse
-from utils.similarity_compare_utils import fetch_reference_landmark, fetch_user_landmark, compare_landmark
+from utils.similarity_compare_utils import fetch_reference_landmark, fetch_user_landmark, compare_landmark, score_to_label
 
-from fastapi import Depends
-from sqlalchemy.orm import Session
-from db.session import get_db, SessionLocal
+from sqlalchemy.ext.asyncio import AsyncSession
+from db.session import get_db, AsyncSessionLocal
 from crud.game import get_game_by_url
 
 import json
@@ -31,9 +30,9 @@ async def test_endpoint():
     return {"status": "success", "message": "API is reachable"}
 
 @app.post("/process_youtube", response_model=ProcessResponse)
-async def process_youtube(req: YouTubeRequest, db: Session = Depends(get_db)):
+async def process_youtube(req: YouTubeRequest, db: AsyncSession = Depends(get_db)):
     try:
-        existing_game = get_game_by_url(db, youtube_link=req.url)
+        existing_game = await get_game_by_url(db, youtube_link=req.url)
         if existing_game:
             return {
                 "status": "already processed",
@@ -55,40 +54,57 @@ async def process_youtube(req: YouTubeRequest, db: Session = Depends(get_db)):
 @app.websocket("/ws/landmark")
 async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
     await websocket.accept()
-    
+
     try:
         scores = []
-        db: Session = SessionLocal()
-        game = get_game_by_url(db, youtube_link=video_url)
-        landmark = game.landmark
-        reference_landmark = json.loads(landmark)
+        labels = []
+        label_count = {
+            "perfect": 0,
+            "great": 0,
+            "good": 0,
+            "bad": 0
+        }
 
+        async with AsyncSessionLocal() as db:
+            game = await get_game_by_url(db, youtube_link=video_url)
+            landmark = game.landmark
+            reference_landmark = json.loads(landmark)
+                
         while True:
             data = await websocket.receive_json()
+    
+            start_ms = data["start_ms"]
+            end_ms = data["end_ms"]
+            user_landmark = data["data"]
+            is_last_sentence = data.get("is_last_sentence", False)
 
-            # # start_ms = data["start_ms"]
-            # # end_ms = data["end_ms"]
-            # # user_landmark = data["user_landmark"]
-            # # is_last_sentence = data.get("is_last_sentence", False)
+            reference = fetch_reference_landmark(start_ms, end_ms, reference_landmark)
+            user = fetch_user_landmark(user_landmark)
+            score = compare_landmark(reference, user)
 
-            # # reference = fetch_reference_landmark(start_ms, end_ms, reference_landmark)
-            # # user_processed = fetch_user_landmark(user_landmark)
-            # # score = compare_landmark(reference, user_processed)
+            print("reference", len(reference))
+            print("user", len(user))
+            
+            label = score_to_label(score)
+            scores.append(score)
+            labels.append(label)
 
-            # # scores.append(score)
-
-            score = "good"
+            if label in label_count:
+                label_count[label] += 1
 
             await websocket.send_json({
                 "sentence_score": score,
+                "sentence_label": label,
+                "label_count": label_count,
                 "index": len(scores) - 1
             })
-
-            # # if is_last_sentence:
-            # #     await websocket.send_json({
-            # #         "final_scores": scores
-            # #     })
-            # #     break
+            
+            if is_last_sentence:
+                await websocket.send_json({
+                    "final_scores": label_count,
+                    "last": True
+                })
+                break
 
     except Exception as e:
         print("WebSocket error:", e)
@@ -98,6 +114,7 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
         except RuntimeError:
             pass 
         print("WebSocket 정상 종료")
+
 
 @app.post("/get_subtitle", response_model=SubtitleResponse)
 async def get_subtitle(req: SubtitleRequest):

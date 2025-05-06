@@ -9,7 +9,7 @@ from utils.landmark_utils import landmark_list_to_dict, normalize_landmarks
 from utils.logging_utils import logger
 from models.request_models import GameCreate
 from crud.game import create_game
-from db.session import SessionLocal
+from db.session import AsyncSessionLocal  # 비동기 세션 사용
 
 mp_holistic = mp.solutions.holistic
 
@@ -79,8 +79,8 @@ async def process_video(request_url: str, video_url: str):
                 "left_hand_landmarks": landmark_list_to_dict(left_lm) if left_lm else None,
                 "right_hand_landmarks": landmark_list_to_dict(right_lm) if right_lm else None
             }
-            processed_frames.append(frame_data)
 
+            processed_frames.append(frame_data)
             await asyncio.sleep(0)
 
     except Exception as e:
@@ -100,35 +100,21 @@ async def process_video(request_url: str, video_url: str):
         "fps_used": fps,
         "data": processed_frames
     }
+    
+    async with AsyncSessionLocal() as db:
+        try:
+            game_data = GameCreate(
+                landmark=json.dumps(result, ensure_ascii=False),
+                youtube_link=request_url
+            )
+            saved_game = await create_game(db, game=game_data)
 
-    output_dir = "output/youtube_result"
-    os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, f"result_{int(time.time())}.json")
-
-    try:
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, separators=(',', ':'))
-        logger.info(f"결과 저장 완료: {output_file}")
-    except Exception as e:
-        logger.error(f"결과 저장 실패: {e}", exc_info=True)
-
-    json_string = json.dumps(result, ensure_ascii=False)
-    logger.info(f"landmark JSON 크기: {len(json_string)} bytes ≈ {len(json_string)/1024/1024:.2f} MB")    
-
-    db = SessionLocal()
-    try:
-        game_data = GameCreate(
-            landmark=json.dumps(result, ensure_ascii=False),
-            youtube_link=request_url
-        )
-        saved_game = create_game(db, game=game_data)
-
-        if saved_game and saved_game.youtube_link == request_url:
-            logger.info(f"[DB 저장 완료 ] id={saved_game.id}, video_url={saved_game.youtube_link}")
-        else:
-            logger.warning(f"[DB 저장 확인 실패 ] 반환값이 예상과 다름")
-    except Exception as e:
-        db.rollback()
-        logger.error(f"[DB 저장 실패] {e}", exc_info=True)
-    finally:
-        db.close()
+            if saved_game and saved_game.youtube_link == request_url:
+                logger.info(f"[DB 저장 완료 ] id={saved_game.id}, video_url={saved_game.youtube_link}")
+            else:
+                logger.warning(f"[DB 저장 확인 실패 ] 반환값이 예상과 다름")
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"[DB 저장 실패] {e}", exc_info=True)
+            
+    ### 이메일 요청 구현 필요 ###

@@ -1,34 +1,40 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 from models import db_models, request_models
 
-def create_game(db: Session, game: request_models.GameCreate):
+async def create_game(db: AsyncSession, game: request_models.GameCreate):
     db_game = db_models.Game(landmark=game.landmark, youtube_link=game.youtube_link)
     db.add(db_game)
-    db.commit()
-    db.refresh(db_game)
+    await db.commit()
+    await db.refresh(db_game)
     return db_game
 
-def game(db: Session, game_id: int):
-    return db.query(db_models.Game).filter(db_models.Game.id == game_id).first()
+async def game(db: AsyncSession, game_id: int):
+    result = await db.execute(select(db_models.Game).where(db_models.Game.id == game_id))
+    return result.scalar_one_or_none()
 
-def get_games(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(db_models.Game).offset(skip).limit(limit).all()
+async def get_games(db: AsyncSession, skip: int = 0, limit: int = 100):
+    result = await db.execute(select(db_models.Game).offset(skip).limit(limit))
+    return result.scalars().all()
 
-def get_game_by_url(db: Session, youtube_link: str):
-    return db.query(db_models.Game).filter(db_models.Game.youtube_link == youtube_link).first()
+async def get_game_by_url(db: AsyncSession, youtube_link: str):
+    result = await db.execute(select(db_models.Game).where(db_models.Game.youtube_link == youtube_link))
+    return result.scalar_one_or_none()
 
-def update_game(db: Session, game_id: int, game: request_models.GameCreate):
-    db_game = db.query(db_models.Game).filter(db_models.Game.id == game_id).first()
+async def update_game(db: AsyncSession, game_id: int, game: request_models.GameCreate):
+    result = await db.execute(select(db_models.Game).where(db_models.Game.id == game_id))
+    db_game = result.scalar_one_or_none()
     if db_game:
         db_game.landmark = game.landmark
         db_game.youtube_link = game.youtube_link
-        db.commit()
-        db.refresh(db_game)
+        await db.commit()
+        await db.refresh(db_game)
     return db_game
 
-def delete_game(db: Session, game_id: int):
-    db_game = db.query(db_models.Game).filter(db_models.Game.id == game_id).first()
+async def delete_game(db: AsyncSession, game_id: int):
+    result = await db.execute(select(db_models.Game).where(db_models.Game.id == game_id))
+    db_game = result.scalar_one_or_none()
     if db_game:
-        db.delete(db_game)
-        db.commit()
+        await db.delete(db_game)
+        await db.commit()
     return db_game

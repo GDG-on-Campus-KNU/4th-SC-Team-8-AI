@@ -2,40 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Landmark Comparison Dummy Front</title>
+  <title>Landmark Comparison Front</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-      background-color: #f4f4f4;
-    }
-    #container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    #video-row {
-      display: flex;
-      justify-content: space-between;
-      width: 80%;
-      margin-top: 20px;
-    }
-    #player, .video-wrapper video {
+    body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f4; }
+    #container { display: flex; flex-direction: column; align-items: center; }
+    #video-row { display: flex; justify-content: space-between; width: 80%; margin-top: 20px; }
+    .video-wrapper { width: 45%; position: relative; }
+
+    .video-wrapper > video {
       width: 100%;
       height: 300px;
       border: 1px solid #ccc;
+      transform: scaleX(-1);
     }
-    .video-wrapper {
-      width: 45%;
-      position: relative;
-    }
-    canvas {
+
+    .video-wrapper > canvas {
+      width: 100%;
+      height: 300px;
+      border: 1px solid #ccc;
       position: absolute;
       top: 0;
       left: 0;
       z-index: 10;
       pointer-events: none;
     }
+
     #score-display {
       margin-top: 20px;
       background-color: #fff;
@@ -44,6 +35,7 @@
       width: 50%;
       text-align: center;
     }
+
     #subtitle-display, #timestamp-display {
       margin-top: 10px;
       font-style: italic;
@@ -54,7 +46,21 @@
       border-radius: 6px;
       font-size: 14px;
     }
+
+    #label-count-box {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 10px 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      font-size: 14px;
+      z-index: 999;
+    }
   </style>
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -63,15 +69,25 @@
 <body>
   <div id="container">
     <h2>Landmark Score Test</h2>
-    <input type="text" id="videoUrlInput" placeholder="Enter YouTube video URL" style="width: 60%; padding: 10px;">
+    <input id="videoUrlInput" placeholder="Enter YouTube video URL" style="width: 60%; padding: 10px;">
     <button onclick="loadVideo()">Load Video</button>
 
     <div id="video-row">
       <div style="width: 45%; display: flex; flex-direction: column; align-items: center;">
-        <div id="player"></div>
+        <div id="player" style="position: relative;"></div>
+        <div id="label-count-box">
+          <strong>Label Count</strong>
+          <div id="label-counts">
+            perfect: 0<br>
+            great: 0<br>
+            good: 0<br>
+            bad: 0
+          </div>
+        </div>
         <div id="subtitle-display"></div>
         <div id="timestamp-display"></div>
       </div>
+
       <div class="video-wrapper">
         <video id="webcamVideo" autoplay muted playsinline></video>
         <canvas id="overlayCanvas"></canvas>
@@ -85,163 +101,171 @@
   </div>
 
   <script>
-    let player;
-    let subtitleData = [];
-    let socket = null;
-    let subtitleTimer = null;
-    const videoInput = document.getElementById("videoUrlInput");
-    const webcamVideo = document.getElementById("webcamVideo");
+    let player, subtitleData = [], socket = null, subtitleTimer = null;
+    const vInput = document.getElementById("videoUrlInput");
+    const webcam = document.getElementById("webcamVideo");
     const canvas = document.getElementById("overlayCanvas");
     const ctx = canvas.getContext("2d");
-    const scoreLog = document.getElementById("scoreLog");
-    const subtitleDisplay = document.getElementById("subtitle-display");
-    const timestampDisplay = document.getElementById("timestamp-display");
+    const sLog = document.getElementById("scoreLog");
+    const subDisp = document.getElementById("subtitle-display");
+    const timeDisp = document.getElementById("timestamp-display");
 
-    let currentSubtitleIndex = -1;
-    let collectedLandmarks = [];
+    let curSubIdx = -1, collected = [], frameIdx = 0;
 
     function loadVideo() {
-      const url = videoInput.value;
-      const videoId = url.split("v=")[1]?.split("&")[0];
-      if (!videoId) return;
+      const url = vInput.value.trim();
+      const id = url.split("v=")[1]?.split("&")[0];
+      if (!id) return;
 
-      if (player) {
-        player.loadVideoById(videoId);
-      } else {
+      player ? player.loadVideoById(id) :
         player = new YT.Player('player', {
-          height: '300',
-          width: '100%',
-          videoId: videoId,
-          events: {
-            'onReady': () => pollSubtitleTime(url)
-          }
+          height: '300', width: '100%', videoId: id,
+          events: { onReady: () => pollSubtitleTime(url) }
         });
-      }
 
       fetch("http://localhost:8000/get_subtitle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, lang: "ko" })
       })
-      .then(res => res.json())
-      .then(result => {
-        const events = result.subtitle?.events;
-        if (Array.isArray(events)) {
-          subtitleData = events.map(e => ({
-            start: e.tStartMs,
-            end: e.tStartMs + (e.dDurationMs || 1000),
-            text: (e.segs || []).map(s => s.utf8).join('') || ""
-          }));
-        }
+      .then(r => r.json()).then(res => {
+        const ev = res.subtitle?.events || [];
+        subtitleData = ev.map(e => ({
+          start: e.tStartMs,
+          end: e.tStartMs + (e.dDurationMs || 1000),
+          text: (e.segs || []).map(s => s.utf8).join('')
+        }));
         startWebSocket(url);
-      })
-      .catch(err => console.error("자막 로드 실패:", err));
+      }).catch(err => console.error("자막 로드 실패:", err));
     }
 
     function pollSubtitleTime() {
-      if (subtitleTimer) clearInterval(subtitleTimer);
+      clearInterval(subtitleTimer);
       subtitleTimer = setInterval(() => {
-        if (!player || typeof player.getCurrentTime !== 'function') return;
-        const currentMs = Math.floor(player.getCurrentTime() * 1000);
+        if (!player || !player.getCurrentTime) return;
+        const nowMs = Math.floor(player.getCurrentTime() * 1000);
+        const idx = subtitleData.findIndex(s => nowMs >= s.start && nowMs <= s.end);
 
-        const nextIndex = subtitleData.findIndex(sub => currentMs >= sub.start && currentMs <= sub.end);
-        if (nextIndex !== -1) {
-          if (nextIndex !== currentSubtitleIndex) {
-            if (collectedLandmarks.length > 0 && currentSubtitleIndex !== -1) {
-              const prev = subtitleData[currentSubtitleIndex];
-              socket?.send(JSON.stringify({
-                video_url: videoInput.value,
-                start_ms: prev.start,
-                end_ms: prev.end,
-                user_landmark: collectedLandmarks,
-                is_last_sentence: false
-              }));
-              collectedLandmarks = [];
-            }
-            currentSubtitleIndex = nextIndex;
+        if (idx !== -1 && idx !== curSubIdx) {
+          if (collected.length && curSubIdx !== -1) {
+            const prev = subtitleData[curSubIdx];
+            const isLast = curSubIdx === subtitleData.length - 1;
+
+            socket?.send(JSON.stringify({
+              total_frame: collected.length,
+              script: prev.text,
+              start_ms: prev.start,
+              end_ms: prev.end,
+              data: collected,
+              is_last_sentence: isLast
+            }));
+            collected = [];
+            frameIdx = 0;
           }
+          curSubIdx = idx;
         }
 
-        const activeSub = subtitleData[nextIndex];
-        subtitleDisplay.innerText = activeSub ? activeSub.text : "";
-        timestampDisplay.innerText = `⏱️ 현재 시점: ${currentMs} ms`;
+        const sub = subtitleData[idx];
+        subDisp.innerText = sub ? sub.text : "";
+        timeDisp.innerText = `⏱️ ${nowMs} ms`;
       }, 300);
     }
 
     function startWebcam() {
       navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-        webcamVideo.srcObject = stream;
-        const camera = new Camera(webcamVideo, {
+        webcam.srcObject = stream;
+        const cam = new Camera(webcam, {
           onFrame: async () => {
-            if (webcamVideo.videoWidth && webcamVideo.videoHeight) {
-              canvas.width = webcamVideo.videoWidth;
-              canvas.height = webcamVideo.videoHeight;
-              canvas.style.width = webcamVideo.offsetWidth + "px";
-              canvas.style.height = webcamVideo.offsetHeight + "px";
+            if (webcam.videoWidth && webcam.videoHeight) {
+              canvas.width = webcam.videoWidth;
+              canvas.height = webcam.videoHeight;
+              canvas.style.width = webcam.offsetWidth + "px";
+              canvas.style.height = webcam.offsetHeight + "px";
             }
-            await hands.send({ image: webcamVideo });
+
+            off.width = webcam.videoWidth;
+            off.height = webcam.videoHeight;
+            offCtx.save();
+            offCtx.scale(-1, 1);
+            offCtx.drawImage(webcam, -off.width, 0, off.width, off.height);
+            offCtx.restore();
+
+            await hands.send({ image: off });
           },
           width: 640,
-          height: 480
+          height: 480,
+          mirror: false
         });
-        camera.start();
+        cam.start();
       });
     }
 
+    const off = document.createElement("canvas");
+    const offCtx = off.getContext("2d");
+
     const hands = new Hands({
-      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
     });
     hands.setOptions({
+      selfieMode: false,
       maxNumHands: 2,
       modelComplexity: 1,
       minDetectionConfidence: 0.7,
       minTrackingConfidence: 0.5
     });
 
-    hands.onResults(results => {
-      ctx.save();
+    hands.onResults(res => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (results.multiHandLandmarks) {
-        results.multiHandLandmarks.forEach(landmarks => {
-          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 3 });
-          drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 2 });
-        });
 
-        let landmark = {};
-        results.multiHandLandmarks.forEach((hand, handIndex) => {
-          hand.forEach((pt, i) => {
-            landmark[`x${handIndex}_${i}`] = pt.x;
-            landmark[`y${handIndex}_${i}`] = pt.y;
-          });
-        });
+      let lmsL = null, lmsR = null;
+      if (res.multiHandLandmarks && res.multiHandedness) {
+        res.multiHandLandmarks.forEach((lm, i) => {
+          const label = res.multiHandedness[i]?.label;
+          const fixedLabel = (label === "Left") ? "Right" : "Left";
 
-        // ✅ timestamp_ms: 정확한 영상 시점
-        if (player && typeof player.getCurrentTime === 'function' && currentSubtitleIndex !== -1) {
-          const currentMs = Math.floor(player.getCurrentTime() * 1000);
-          const sub = subtitleData[currentSubtitleIndex];
-          if (currentMs >= sub.start && currentMs <= sub.end) {
-            collectedLandmarks.push({
-              timestamp_ms: currentMs,
-              landmark: landmark
-            });
-          }
-        }
+          drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: "#00FF00", lineWidth: 3 });
+          drawLandmarks(ctx, lm, { color: "#FF0000", lineWidth: 2 });
+
+          if (fixedLabel === "Left")  lmsL = lm;
+          if (fixedLabel === "Right") lmsR = lm;
+        });
       }
-      ctx.restore();
+
+      collected.push({
+        frame: frameIdx++,
+        left_hand_landmarks: lmsL,
+        right_hand_landmarks: lmsR
+      });
     });
 
-    function startWebSocket(videoUrl) {
-      socket = new WebSocket(`ws://localhost:8000/ws/landmark?video_url=${encodeURIComponent(videoUrl)}`);
-      socket.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.sentence_score !== undefined) {
-          scoreLog.innerHTML += `<p>Score: ${msg.sentence_score}</p>`;
+    function startWebSocket(vUrl) {
+      socket = new WebSocket("ws://localhost:8000/ws/landmark?video_url=" + encodeURIComponent(vUrl));
+      socket.onmessage = e => {
+        const msg = JSON.parse(e.data);
+
+        // ✅ 최신 점수만 덮어쓰기
+        if (msg.sentence_score !== undefined && msg.sentence_label !== undefined) {
+          sLog.innerHTML = `<p>Score: ${msg.sentence_score.toFixed(4)} | Label: <strong>${msg.sentence_label}</strong></p>`;
         }
+
+        // ✅ label 카운트 갱신
+        if (msg.label_count) {
+          const counts = msg.label_count;
+          document.getElementById("label-counts").innerHTML = `
+            perfect: ${counts.perfect}<br>
+            great: ${counts.great}<br>
+            good: ${counts.good}<br>
+            bad: ${counts.bad}
+          `;
+        }
+
+        // ✅ Final 점수 출력 유지
         if (msg.final_scores) {
-          scoreLog.innerHTML += `<p><strong>Final Scores:</strong> ${msg.final_scores.join(", ")}</p>`;
+          sLog.innerHTML += `<p><strong>Final:</strong> ${msg.final_scores.join(", ")}</p>`;
         }
       };
-      socket.onerror = err => console.error("WebSocket error:", err);
+
+      socket.onerror = err => console.error("WS error:", err);
     }
 
     startWebcam();
