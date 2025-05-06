@@ -7,130 +7,237 @@
   <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body class="bg-gray-900 text-gray-100 p-6">
-<!-- URL·버튼 -->
-<div class="space-x-2">
-  <input id="url" class="w-96 px-2 py-1 rounded text-gray-900"
-         placeholder="유튜브 URL" />
-  <button id="prepBtn"
-          class="bg-amber-600 hover:bg-amber-700 px-4 py-1 rounded">
-    준비 시작
-  </button>
-  <button id="playBtn" disabled
-          class="bg-indigo-600 hover:bg-indigo-700 px-4 py-1 rounded">
-    영상 재생
-  </button>
-</div>
+  <!-- URL·버튼 -->
+  <div class="space-x-2">
+    <input id="url" class="w-96 px-2 py-1 rounded text-gray-900" placeholder="유튜브 URL" />
+    <button id="prepBtn" class="bg-amber-600 hover:bg-amber-700 px-4 py-1 rounded">준비 시작</button>
+    <button id="playBtn" disabled class="bg-indigo-600 hover:bg-indigo-700 px-4 py-1 rounded">영상 재생</button>
+  </div>
 
-<!-- 안내문 + 평가 누적 -->
-<div class="mt-4 flex gap-6">
-  <div id="msg" class="text-lg font-bold text-amber-400 grow"></div>
-  <ul id="scoreLog" class="space-y-0.5 text-sm text-lime-400"></ul>
-</div>
+  <!-- 안내문 + 평가 누적 + 집계 -->
+  <div class="mt-4 flex gap-6">
+    <div id="msg" class="text-lg font-bold text-amber-400 grow"></div>
+    <div>
+      <ul id="scoreLog" class="space-y-0.5 text-sm text-lime-400"></ul>
+      <div id="scoreSummary" class="text-xs text-lime-300 mt-1"></div>
+    </div>
+  </div>
 
-<!-- 영상 / 웹캠 -->
-<div class="flex gap-4 mt-6">
-  <div class="flex-1"><div id="player"
-       class="w-full aspect-video bg-black rounded"></div></div>
-  <div class="flex-1"><video id="webcam" autoplay playsinline muted
-       class="w-full aspect-video bg-black rounded hidden"></video></div>
-</div>
+  <!-- 영상 / 웹캠 -->
+  <div class="flex gap-4 mt-6">
+    <div class="flex-1"><div id="player" class="w-full aspect-video bg-black rounded"></div></div>
+    <div class="flex-1"><video id="webcam" autoplay playsinline muted class="w-full aspect-video bg-black rounded hidden"></video></div>
+  </div>
 
-<script>
-const API = "http://localhost:5000";
-let youtubeId="", videoId="", captions=[];
-let player=null, idx=0, polling=null, webcam=null, hasWebcam=false;
+  <!-- 3·2·1 카운트다운 오버레이 -->
+  <div id="countdown"
+       class="fixed inset-0 flex items-center justify-center text-8xl font-extrabold
+              text-amber-500 bg-black/60 hidden z-50 select-none"></div>
 
-/* -------------- 준비 버튼 -------------- */
-document.getElementById("prepBtn").onclick = async () => {
-  const url = document.getElementById("url").value.trim();
-  if (!url) return alert("URL 입력");
+  <script>
+    const API = "http://localhost:5000";
+    let youtubeId = "", videoId = "", captions = [];
+    let player = null, idx = 0, polling = null, webcam = null, hasWebcam = false;
 
-  /* 1) 준비 시작 */
-  await fetch(`${API}/prepare_youtube`,{
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({url})
-  });
-  document.getElementById("msg").textContent = "⏳ 랜드마크 추출 중…";
-
-  /* 2) 자막 */
-  const sub = await fetch(`${API}/get_subtitle`,{
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({url,lang:"ko"})
-  }).then(r=>r.json());
-  captions = sub.captions;
-  youtubeId = videoId = sub.youtube_id;
-
-  /* 3) 준비 완료 폴링 */
-  polling = setInterval(async ()=>{
-    const js = await fetch(`${API}/check_ready?youtube_id=${youtubeId}`)
-                      .then(r=>r.json());
-    if (js.ready) {
-      clearInterval(polling);
-      document.getElementById("msg").textContent="✅ 준비 완료! '영상 재생' 클릭";
-      document.getElementById("playBtn").disabled=false;
+    /* 평가 집계용 객체 */
+    const scoreCnt = { perfect: 0, great: 0, good: 0, bad: 0 };
+    function updateSummary() {
+      const s = `Perfect ${scoreCnt.perfect} | Great ${scoreCnt.great} | Good ${scoreCnt.good} | Bad ${scoreCnt.bad}`;
+      document.getElementById("scoreSummary").textContent = s;
     }
-  }, 3000);
-};
 
-/* -------------- 영상 재생 버튼 -------------- */
-document.getElementById("playBtn").onclick = async () => {
-  document.getElementById("playBtn").disabled=true;
-  player = new YT.Player("player",{
-    videoId,
-    playerVars:{controls:0,autoplay:1,mute:1,playsinline:1,
-      modestbranding:1,rel:0,fs:0,disablekb:1},
-    events:{onReady:()=>{idx=0;next();}}
-  });
-  try{
-    webcam = await navigator.mediaDevices.getUserMedia({video:true});
-    hasWebcam=true;
-    const v=document.getElementById("webcam");
-    v.srcObject=webcam; v.classList.remove("hidden");
-  }catch{hasWebcam=false;}
-};
+    /* ── WebSocket 연결 및 수신 핸들러 ── */
+    const socket = new WebSocket("ws://localhost:5000/ws");
+    socket.addEventListener("open", () => {
+      console.log("WebSocket connected");
+    });
+    socket.addEventListener("message", ev => {
+      const { score, rating } = JSON.parse(ev.data);
+      const rounded = Math.round(score);
 
-/* -------------- 플레이 루프 -------------- */
-function next(){
-  if(idx>=captions.length){
-    document.getElementById("msg").textContent="🎉 끝!";
-    return;
-  }
-  const c=captions[idx], dur=c.dur||3;
-  player.seekTo(c.start,true); player.playVideo();
-  document.getElementById("msg").textContent=c.text.trim()?c.text:"…";
-  setTimeout(()=>{player.pauseVideo(); afterPause(c);},dur*1000);
-}
+      // 1) 메인 메시지
+      document.getElementById("msg").textContent =
+        `⭐ ${rating.toUpperCase()} (${rounded})`;
 
-async function afterPause(c){
-  if(!c.text.trim()||!hasWebcam){idx++;setTimeout(next,500);return;}
+      // 2) 로그 추가
+      const li = document.createElement("li");
+      li.textContent = `#${idx+1}  ${rating.toUpperCase()}  (${rounded})`;
+      document.getElementById("scoreLog").appendChild(li);
 
-  /* 녹화 */
-  const rec=new MediaRecorder(webcam,{mimeType:"video/webm"});
-  const chunks=[]; rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-  rec.start(); setTimeout(()=>rec.stop(),c.dur*1000);
+      // 3) 집계 업데이트
+      const key = rating.toLowerCase();
+      if (scoreCnt[key] != null) scoreCnt[key]++;
+      updateSummary();
 
-  rec.onstop=async()=>{
-    const f=new FormData();
-    f.append("video", new Blob(chunks,{type:"video/webm"}),"cam.webm");
-    f.append("youtube_id",youtubeId);
-    f.append("caption_start",c.start); f.append("caption_dur",c.dur);
+      // 4) 다음 구간으로
+      idx++;
+      setTimeout(next, 1500);
+    });
 
-    const res=await fetch(`${API}/evaluate_caption`,{method:"POST",body:f})
-                    .then(r=>r.json())
-                    .catch(()=>({rating:"error",score:9999}));
+    /* ----------- 준비 버튼 ----------- */
+    document.getElementById("prepBtn").onclick = async () => {
+      const url = document.getElementById("url").value.trim();
+      if (!url) return alert("URL 입력");
+      await fetch(`${API}/prepare_youtube`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+      document.getElementById("msg").textContent = "⏳ 랜드마크 추출 중…";
+      const sub = await fetch(`${API}/get_subtitle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, lang: "ko" })
+      }).then(r => r.json());
+      captions = sub.captions;
+      youtubeId = videoId = sub.youtube_id;
+      polling = setInterval(async () => {
+        const js = await fetch(`${API}/check_ready?youtube_id=${youtubeId}`)
+                          .then(r => r.json());
+        if (js.ready) {
+          clearInterval(polling);
+          document.getElementById("msg").textContent = "✅ 준비 완료! '영상 재생' 클릭";
+          document.getElementById("playBtn").disabled = false;
+        }
+      }, 3000);
+    };
 
-    /* 안내문 텍스트 */
-    document.getElementById("msg").textContent=
-      `⭐ ${res.rating.toUpperCase()} (${Math.round(res.score)})`;
+    /* ----------- 영상 재생 버튼 ----------- */
+    document.getElementById("playBtn").onclick = async () => {
+      document.getElementById("playBtn").disabled = true;
+      player = new YT.Player("player", {
+        videoId,
+        playerVars: {
+          controls: 0, autoplay: 1, mute: 1, playsinline: 1,
+          modestbranding: 1, rel: 0, fs: 0, disablekb: 1
+        },
+        events: { onReady: () => { idx = 0; next(); } }
+      });
+      try {
+        webcam = await navigator.mediaDevices.getUserMedia({ video: true });
+        hasWebcam = true;
+        const v = document.getElementById("webcam");
+        v.srcObject = webcam;
+        v.classList.remove("hidden");
+      } catch {
+        hasWebcam = false;
+      }
+    };
 
-    /* ★ 누적 리스트에 추가 ★ */
-    const li=document.createElement("li");
-    li.textContent=`#${idx+1}  ${res.rating.toUpperCase()}  (${Math.round(res.score)})`;
-    document.getElementById("scoreLog").appendChild(li);
+    /* ----------- 카운트다운 ----------- */
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    async function countdown(sec = 3) {
+      const cd = document.getElementById("countdown");
+      cd.classList.remove("hidden");
+      while (sec > 0) {
+        cd.textContent = sec;
+        await sleep(1000);
+        sec--;
+      }
+      cd.classList.add("hidden");
+    }
 
-    idx++; setTimeout(next,800);
-  };
-}
-</script>
+    /* ----------- 플레이 루프 ----------- */
+    function next() {
+      if (idx >= captions.length) {
+        document.getElementById("msg").textContent = "🎉 끝!";
+        return;
+      }
+      const c = captions[idx];
+      const dur = c.dur || 3;
+      player.seekTo(c.start, true);
+      player.playVideo();
+      document.getElementById("msg").textContent = c.text.trim() ? c.text : "…";
+      setTimeout(() => {
+        player.pauseVideo();
+        afterPause(c);
+      }, dur * 1000);
+    }
+
+    /* ----------- 동작여부 기반 녹화 (원본 함수 유지) ----------- */
+    function startMotionWatcher(video, recorder, fallbackTimer) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width  = video.videoWidth  || 320;
+      canvas.height = video.videoHeight || 240;
+
+      let lastData = null, stillFrames = 0;
+      const CHECK      = 200;    // ms
+      const MAX_STILL  = 3000 / CHECK;
+      const PIXEL_STEP = 4;
+      const CHANGE_TH  = 0.02;
+
+      const id = setInterval(() => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        if (lastData) {
+          let changed = 0;
+          const totalPixels = data.length / 4;
+          for (let i = 0; i < data.length; i += PIXEL_STEP) {
+            const dr = Math.abs(data[i]   - lastData[i]);
+            const dg = Math.abs(data[i+1] - lastData[i+1]);
+            const db = Math.abs(data[i+2] - lastData[i+2]);
+            if (dr + dg + db > 30) changed++;
+          }
+          const ratio = changed / (totalPixels / (PIXEL_STEP/4));
+          if (ratio < CHANGE_TH) stillFrames++;
+          else stillFrames = 0;
+
+          if (stillFrames >= MAX_STILL) {
+            clearInterval(id);
+            clearTimeout(fallbackTimer);
+            recorder.stop();
+          }
+        }
+        lastData = new Uint8ClampedArray(data);
+      }, CHECK);
+
+      recorder.onstop = () => clearInterval(id);
+    }
+
+    /* ----------- 일시정지 후 처리 (WebSocket 전송으로 변경) ----------- */
+    async function afterPause(c) {
+      if (!c.text.trim() || !hasWebcam) {
+        idx++;
+        setTimeout(next, 500);
+        return;
+      }
+
+      await countdown(3);
+
+      // 녹화 준비
+      const rec = new MediaRecorder(webcam, { mimeType: "video/webm" });
+      const chunks = [];
+      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      rec.start();
+
+      // 유튜브 재생
+      player.seekTo(c.start, true);
+      player.playVideo();
+
+      // 자동 종료
+      const durMs = (c.dur || 3) * 1000;
+      const fallbackTimer = setTimeout(() => {
+        player.pauseVideo();
+        rec.stop();
+      }, durMs);
+
+      // 녹화 종료 시 WebSocket으로 메타데이터+영상 전송
+      rec.onstop = () => {
+        clearTimeout(fallbackTimer);
+        // 1) 메타데이터(JSON) 전송
+        const meta = {
+          type: "evaluate_caption",
+          youtube_id: youtubeId,
+          caption_start: c.start,
+          caption_dur: durMs / 1000
+        };
+        socket.send(JSON.stringify(meta));
+        // 2) 비디오 Blob 전송 (binary frame)
+        const videoBlob = new Blob(chunks, { type: "video/webm" });
+        socket.send(videoBlob);
+      };
+    }
+  </script>
 </body>
 </html>

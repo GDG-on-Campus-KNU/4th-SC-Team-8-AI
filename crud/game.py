@@ -84,3 +84,15 @@ def delete_game(db: Session, game_id: int):
         db.delete(db_game)
         db.commit()
     return db_game
+
+def get_latest_game_by_link(db: Session, youtube_id: str) -> Game | None:
+    """
+    youtube_id(또는 youtube_link 일부)로 가장 최근에 저장된 Game 레코드를 반환합니다.
+    """
+    like_pattern = f"%{youtube_id}%"
+    return (
+        db.query(Game)
+          .filter(Game.youtube_link.like(like_pattern))
+          .order_by(Game.id.desc())
+          .first()
+    )

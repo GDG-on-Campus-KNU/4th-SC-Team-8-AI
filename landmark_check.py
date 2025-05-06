@@ -72,11 +72,3 @@ def display_landmarks_from_json(json_path, window_size=(1280, 720), delay=30):
 
     cv2.destroyAllWindows()
 
-if __name__ == "__main__":
-    # JSON 파일 경로를 명령줄 인자로 받을 수 있도록 함
-    # if len(sys.argv) < 2:
-    #     print("Usage: python landmark_check.py path/to/normalized_result.json")
-    #     sys.exit(1)
-
-    json_file = 'output/youtube_result/result_1742213016.json'
-    display_landmarks_from_json(json_file)

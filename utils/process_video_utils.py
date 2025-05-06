@@ -1,4 +1,3 @@
-# utils/process_video_utils.py
 from __future__ import annotations
 import os, json, time, cv2, traceback
 from pathlib import Path
@@ -10,6 +9,9 @@ from utils.common import extract_yt_id
 from utils.landmark_utils import (
     landmark_list_to_dict, normalize_landmarks
 )
+from models.request_models import GameCreate
+from crud.game import create_game
+from db.session import SessionLocal
 
 OUT_DIR = Path("output/youtube_result")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -51,30 +53,24 @@ def process_video(request_url: str, video_url: str) -> None:
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             res = mp_holistic.process(rgb)
 
-            pose_lm   = res.pose_landmarks
             left_lm   = res.left_hand_landmarks
             right_lm  = res.right_hand_landmarks
-            face_lm   = res.face_landmarks
-
-            has_any = any([pose_lm, left_lm, right_lm, face_lm])
+            has_any = any([left_lm, right_lm])
 
             if has_any:
                 frame_data = {
                     "frame": frame_idx,
                     "timestamp_ms": ts_ms,
-                    "pose_landmarks": normalize_landmarks(landmark_list_to_dict(pose_lm)) if pose_lm else None,
-                    "face_landmarks": landmark_list_to_dict(face_lm) if face_lm else None,
                     "left_hand_landmarks": landmark_list_to_dict(left_lm) if left_lm else None,
                     "right_hand_landmarks": landmark_list_to_dict(right_lm) if right_lm else None
                 }
                 processed_frames.append(frame_data)
 
-            frame_idx += 1  # 다음 프레임 인덱스
+            frame_idx += 1
 
-            # ───── 진행률(%) 한 줄 갱신 ─────
             if total_frames:
                 pct = int(frame_idx / total_frames * 100)
-                if pct != last_pct and pct % 2 == 0:  # 0,2,4,…
+                if pct != last_pct and pct % 2 == 0:
                     print(f"\r[Holistic] {youtube_id}  {pct:3d}% 진행 중...", end="")
                     last_pct = pct
 
@@ -87,19 +83,38 @@ def process_video(request_url: str, video_url: str) -> None:
             if pct != last_pct and pct % 2 == 0:
                 logger.info("[Holistic] %s %3d%%", youtube_id, pct)
 
+    result = {
+        "youtube_link": request_url,
+        "youtube_id": youtube_id,
+        "fps": fps,
+        "data": processed_frames,
+    }
+
+    # JSON 저장
     with open(json_path, "w", encoding="utf-8") as f:
-        # 공백·줄바꿈 없이(minify) 저장
         json.dump(
-            {
-                "youtube_link": request_url,
-                "youtube_id": youtube_id,
-                "fps": fps,
-                "data": processed_frames,
-            },
+            result,
             f,
             ensure_ascii=False,
-            separators=(",", ":")  # 용량 최소화를 위해 공백 제거
+            separators=(",", ":")  # 공백 제거
         )
 
-    logger.info("[결과 저장 완료] %s (프레임 %d)",
-                json_path, len(processed_frames))
+    logger.info("[결과 저장 완료] %s (프레임 %d)", json_path, len(processed_frames))
+
+    # DB 저장
+    db = SessionLocal()
+    try:
+        game_data = GameCreate(
+            landmark=json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+            youtube_link=request_url
+        )
+        saved = create_game(db, game=game_data)
+        if saved and saved.youtube_link == request_url:
+            logger.info("[DB 저장 완료] id=%s, youtube_link=%s", saved.id, saved.youtube_link)
+        else:
+            logger.warning("[DB 저장 확인 실패] 반환값이 예상과 다름")
+    except Exception as e:
+        db.rollback()
+        logger.error("[DB 저장 실패] %s", traceback.format_exc())
+    finally:
+        db.close()

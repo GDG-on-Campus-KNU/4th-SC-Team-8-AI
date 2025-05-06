@@ -1,19 +1,27 @@
-import glob, os, json
+import json
 from typing import Optional
 
+from crud.game import get_latest_game_by_link
+from db.session import SessionLocal
+
+
 def find_latest_json(youtube_id: str) -> Optional[str]:
-    paths = glob.glob(os.path.join("output", "youtube_result",
-                                   f"*{youtube_id}*.json"))
-    return max(paths, key=os.path.getmtime) if paths else None
+    """DB에서 가장 최근에 저장된 landmark JSON 문자열을 반환"""
+    db = SessionLocal()
+    try:
+        game = get_latest_game_by_link(db, youtube_id)
+        return game.landmark if game and game.landmark else None
+    finally:
+        db.close()
+
 
 def is_ready(youtube_id: str) -> bool:
     """랜드마크 JSON 존재 && data 길이 > 0"""
-    path = find_latest_json(youtube_id)
-    if not path:
+    json_str = find_latest_json(youtube_id)
+    if not json_str:
         return False
     try:
-        with open(path, encoding="utf-8") as f:
-            obj = json.load(f)
+        obj = json.loads(json_str)
         return bool(obj.get("data"))
     except Exception:
         return False
