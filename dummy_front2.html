@@ -9,23 +9,55 @@
     #video-row { display: flex; justify-content: space-between; width: 80%; margin-top: 20px; }
     .video-wrapper { width: 45%; position: relative; }
     .video-wrapper > video {
-      width: 100%; height: 300px; border: 1px solid #ccc; transform: scaleX(-1);
+      width: 100%;
+      height: 300px;
+      border: 1px solid #ccc;
+      /* transform: scaleX(-1); */ /* ❌ 미러링 제거 */
     }
     .video-wrapper > canvas {
-      width: 100%; height: 300px; border: 1px solid #ccc; position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none;
+      width: 100%;
+      height: 300px;
+      border: 1px solid #ccc;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 10;
+      pointer-events: none;
     }
-    #score-display { margin-top: 20px; background-color: #fff; padding: 10px; border-radius: 5px; width: 50%; text-align: center; }
+    #score-display {
+      margin-top: 20px;
+      background-color: #fff;
+      padding: 10px;
+      border-radius: 5px;
+      width: 50%;
+      text-align: center;
+    }
     #subtitle-display, #timestamp-display {
-      margin-top: 10px; font-style: italic; color: #333; text-align: center; background-color: rgba(255, 255, 255, 0.8);
-      padding: 6px 12px; border-radius: 6px; font-size: 14px;
+      margin-top: 10px;
+      font-style: italic;
+      color: #333;
+      text-align: center;
+      background-color: rgba(255, 255, 255, 0.8);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 14px;
     }
     #label-count-box {
-      position: absolute; top: 10px; right: 10px; background: white; border: 1px solid #ccc;
-      padding: 10px 15px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1);
-      font-size: 14px; z-index: 999;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 10px 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      font-size: 14px;
+      z-index: 999;
     }
     #capture-indicator {
-      position: absolute; bottom: 10px; right: 10px;
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
       background-color: rgba(255, 0, 0, 0.8);
       color: white;
       padding: 6px 12px;
@@ -113,14 +145,12 @@
         if (!player || !player.getCurrentTime) return;
         const nowMs = Math.floor(player.getCurrentTime() * 1000);
 
-        // 다음 자막 찾기
         const nextIdx = subtitleData.findIndex(s => nowMs >= s.start && nowMs <= s.end);
         const nextSub = subtitleData[nextIdx];
 
         timeDisp.innerText = `⏱️ ${nowMs} ms`;
         subDisp.innerText = nextSub ? nextSub.text : "";
 
-        // 자막 종료 처리
         if (isCapturing && curSubIdx !== -1 && nowMs > subtitleData[curSubIdx].end) {
           const prev = subtitleData[curSubIdx];
           const isLast = curSubIdx === subtitleData.length - 1;
@@ -140,7 +170,6 @@
           console.log("📤 캡쳐 종료 및 전송:", prev);
         }
 
-        // 새 자막 시작
         if (nextIdx !== -1 && nextIdx !== curSubIdx) {
           curSubIdx = nextIdx;
           collectedFrames = [];
@@ -167,8 +196,7 @@
             off.width = webcam.videoWidth;
             off.height = webcam.videoHeight;
             offCtx.save();
-            offCtx.scale(-1, 1);
-            offCtx.drawImage(webcam, -off.width, 0, off.width, off.height);
+            offCtx.drawImage(webcam, 0, 0, off.width, off.height); // no mirroring
             offCtx.restore();
 
             await hands.send({ image: off });
