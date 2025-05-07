@@ -72,7 +72,7 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
                 
         while True:
             data = await websocket.receive_json()
-    
+            
             start_ms = data["start_ms"]
             end_ms = data["end_ms"]
             user_landmark = data["data"]
