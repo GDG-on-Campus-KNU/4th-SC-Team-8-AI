@@ -67,8 +67,14 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
 
         async with AsyncSessionLocal() as db:
             game = await get_game_by_url(db, youtube_link=video_url)
-            landmark = game.landmark
-            reference_landmark = json.loads(landmark)
+    
+            if game is None or game.landmark is None:
+                await websocket.send_json({
+                    "error": "해당 영상에 대한 landmark 데이터가 존재하지 않습니다."
+                })
+                await websocket.close()
+                return
+            reference_landmark = json.loads(game.landmark)
                 
         while True:
             data = await websocket.receive_json()
