@@ -1,7 +1,6 @@
 import numpy as np
 import json
 from fastdtw import fastdtw
-from scipy.spatial.distance import cosine
 
 # 1. 코사인 유사도 함수
 def safe_cosine_similarity(v1, v2):
