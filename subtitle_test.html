@@ -6,7 +6,7 @@
   <script>
     // GET 요청을 보내는 기존 함수
     function sendGetRequest() {
-      fetch('http://localhost:5000/test')
+      fetch('http://localhost:5050/test')
         .then(response => response.json())
         .then(data => {
           console.log(data);
@@ -24,17 +24,26 @@
       const youtubeUrl = document.getElementById("youtubeUrl").value;
       const lang = document.getElementById("lang").value || "ko";
 
-      fetch('http://localhost:5000/get_subtitle', {
+      // POST 요청으로 YouTube 자막 받기
+      fetch('http://localhost:5050/get_subtitle', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ url: youtubeUrl, lang: lang })
+        body: JSON.stringify({
+          url: youtubeUrl,
+          lang: lang
+        })
       })
       .then(response => response.json())
       .then(data => {
+        // 응답 처리
         console.log(data);
-        document.getElementById("subtitleResponse").innerText = JSON.stringify(data, null, 2);
+        if (data.status === 'success') {
+          document.getElementById("subtitleResponse").innerText = JSON.stringify(data.subtitle, null, 2);
+        } else {
+          document.getElementById("subtitleResponse").innerText = `Error: ${data.message}`;
+        }
       })
       .catch(error => {
         console.error('Error:', error);
