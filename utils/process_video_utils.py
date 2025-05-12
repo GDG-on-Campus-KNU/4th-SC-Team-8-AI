@@ -4,7 +4,7 @@ import time
 import json
 import asyncio
 
-from utils.landmark_utils import landmark_list_to_dict, normalize_landmarks
+# from utils.landmark_utils import landmark_list_to_dict
 from utils.logging_utils import logger
 from utils.email_utils import send_mail_notification
 from models.request_models import GameCreate
@@ -12,6 +12,12 @@ from crud.game import create_game
 from db.session import AsyncSessionLocal
 
 mp_holistic = mp.solutions.holistic
+
+def landmark_list_to_dict(landmarks):
+    """랜드마크를 딕셔너리 리스트로 변환"""
+    if not landmarks:
+        return None
+    return [{"x": lm.x, "y": lm.y, "z": lm.z, "visibility": getattr(lm, 'visibility', 1.0)} for lm in landmarks]
 
 async def process_video(request_url: str, video_url: str):
     prefix = f"[{request_url}]"
@@ -58,15 +64,7 @@ async def process_video(request_url: str, video_url: str):
             left_lm = results.left_hand_landmarks.landmark if results.left_hand_landmarks else []
             right_lm = results.right_hand_landmarks.landmark if results.right_hand_landmarks else []
 
-            nose_x, nose_y = 0.5, 0.5
-            offset_x, offset_y = 0.5 - nose_x, 0.5 - nose_y
-            all_lm = []
-            for lm in [left_lm, right_lm]:
-                if lm:
-                    all_lm.extend(lm)
-            if all_lm:
-                normalize_landmarks(all_lm, offset_x, offset_y)
-
+            # 정규화를 제거하고 원본 랜드마크 그대로 저장
             timestamp_ms = int(frame_count / fps * 1000)
 
             frame_data = {
@@ -119,4 +117,4 @@ async def process_video(request_url: str, video_url: str):
             await db.rollback()
             logger.error(f"{prefix} [DB 저장 실패] {e}", exc_info=True)
 
-    await send_mail_notification(request_url, status="SUCCESS") 
+    await send_mail_notification(request_url, status="SUCCESS")

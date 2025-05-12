@@ -3,12 +3,8 @@ import json
 from fastdtw import fastdtw
 from scipy.spatial.distance import cosine
 
-# 1. 기존 safe_cosine_similarity 함수 개선
+# 1. 코사인 유사도 함수
 def safe_cosine_similarity(v1, v2):
-    """
-    개선된 코사인 유사도 계산
-    기존 함수명을 유지하면서 정규화 및 범위 조정 추가
-    """
     # 벡터 정규화
     v1_norm = np.linalg.norm(v1)
     v2_norm = np.linalg.norm(v2)
@@ -23,13 +19,14 @@ def safe_cosine_similarity(v1, v2):
     # -1 ~ 1 범위를 0 ~ 1 범위로 변환
     return (similarity + 1) / 2
 
-# 2. 내부적으로 사용할 정규화 함수
-def _normalize_landmarks(vectors):
-    """
-    랜드마크 좌표를 정규화 (내부 함수)
-    """
+# 2. 랜드마크 정규화 함수
+def normalize_landmarks_array(landmarks_array):
+    if len(landmarks_array) == 0:
+        return landmarks_array
+    
     normalized_vectors = []
-    for vec in vectors:
+    
+    for vec in landmarks_array:
         if len(vec) == 0:
             normalized_vectors.append(vec)
             continue
@@ -45,7 +42,7 @@ def _normalize_landmarks(vectors):
         
         # 스케일 정규화 (최대 거리로 나누기)
         max_distance = np.max(np.linalg.norm(centered_points, axis=1))
-        if max_distance > 0:
+        if max_distance > 1e-8:
             normalized_points = centered_points / max_distance
         else:
             normalized_points = centered_points
@@ -54,10 +51,9 @@ def _normalize_landmarks(vectors):
     
     return normalized_vectors
 
-# 3. 내부적으로 사용할 동작 구간 추출 함수
-def _extract_movement_segments(vectors, threshold=0.05):
+def extract_movement_segments(vectors, threshold=0.05):
     """
-    실제 동작이 있는 구간만 추출 (내부 함수)
+    실제 동작이 있는 구간만 추출
     """
     if len(vectors) < 2:
         return vectors
@@ -81,9 +77,9 @@ def _extract_movement_segments(vectors, threshold=0.05):
     return vectors[start_idx:end_idx]
 
 # 4. 가중치 계산 함수
-def _calculate_weights(similarities):
+def calculate_weights(similarities):
     """
-    동작의 시작과 끝에 가중치 적용 (내부 함수)
+    동작의 시작과 끝에 가중치 적용
     """
     weights = np.ones(len(similarities))
     if len(similarities) > 8:  # 충분히 긴 시퀀스만 가중치 적용
@@ -92,7 +88,7 @@ def _calculate_weights(similarities):
         weights[-quarter:] *= 1.2  # 끝 부분
     return weights
 
-# 5. 기존 fetch_reference_landmark 함수는 그대로 유지
+# 5. 참조 랜드마크 가져오기 함수
 def fetch_reference_landmark(start_ms: int, end_ms: int, reference_data: dict) -> list[np.ndarray]:
     frames = reference_data.get("data", [])
     selected = [
@@ -107,7 +103,7 @@ def fetch_reference_landmark(start_ms: int, end_ms: int, reference_data: dict) -
         vec = []
         left_hand = frame.get("left_hand_landmarks") or []
         right_hand = frame.get("right_hand_landmarks") or []
-
+        #랜드마크를 1차원 배열로 가져옴
         for hand in [left_hand, right_hand]:
             for lm in hand:
                 vec.extend([lm.get("x", 0), lm.get("y", 0)])
@@ -122,12 +118,15 @@ def fetch_reference_landmark(start_ms: int, end_ms: int, reference_data: dict) -
             "right_hand_landmarks": right_hand
         })
 
-    with open("reference_output.json", "w", encoding="utf-8") as f:
-        json.dump(json_log, f, ensure_ascii=False, indent=2)
+    try:
+        with open("reference_output.json", "w", encoding="utf-8") as f:
+            json.dump(json_log, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"참조 데이터 저장 중 오류: {e}")
     
     return vectors
 
-# 6. 기존 fetch_user_landmark 함수는 그대로 유지
+# 6. 사용자 랜드마크 가져오기 함수
 def fetch_user_landmark(user_landmarks: list[dict]) -> list[np.ndarray]:
     vectors = []
     json_log = []
@@ -136,7 +135,7 @@ def fetch_user_landmark(user_landmarks: list[dict]) -> list[np.ndarray]:
         vec = []
         left_hand = frame.get("left_hand_landmarks") or []
         right_hand = frame.get("right_hand_landmarks") or []
-
+        #마찬가지로 1차원 배열로 가져옴
         for hand in [left_hand, right_hand]:
             for lm in hand:
                 vec.extend([lm.get("x", 0), lm.get("y", 0)])
@@ -151,44 +150,57 @@ def fetch_user_landmark(user_landmarks: list[dict]) -> list[np.ndarray]:
             "right_hand_landmarks": right_hand
         })
 
-    with open("user_output.json", "w", encoding="utf-8") as f:
-        json.dump(json_log, f, ensure_ascii=False, indent=2)
+    try:
+        with open("user_output.json", "w", encoding="utf-8") as f:
+            json.dump(json_log, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"사용자 데이터 저장 중 오류: {e}")
 
     return vectors
 
-# 7. 기존 compare_landmark 함수 개선 (함수명 동일하게 유지)
+# 7. 랜드마크 비교 함수
 def compare_landmark(reference_seq: list[np.ndarray], user_seq: list[np.ndarray]) -> float:
-    """
-    개선된 랜드마크 비교 함수
-    기존 함수명과 인터페이스를 유지하면서 내부 로직 개선
-    """
     if not reference_seq or not user_seq:
-        return 0.0  # 점수가 의미 없을 경우
+        return 0.0
 
-    # 1. 정규화 적용
+    # 양쪽 모두 동시에 정규화 적용
     try:
-        ref_normalized = _normalize_landmarks(reference_seq)
-        user_normalized = _normalize_landmarks(user_seq)
+        ref_normalized = normalize_landmarks_array(reference_seq)
+        user_normalized = normalize_landmarks_array(user_seq)
     except Exception as e:
         print(f"정규화 중 오류 발생: {e}")
-        # 정규화 실패 시 기존 방식으로 폴백
+        # 정규화 실패 시 기존 데이터 사용
         ref_normalized = reference_seq
         user_normalized = user_seq
     
-    # 2. 동작 구간 추출 (선택적)
+    # 디버깅을 위한 정규화 전후 샘플 로깅
+    if len(reference_seq) > 0 and len(user_seq) > 0:
+        try:
+            with open("normalization_debug.json", "w", encoding="utf-8") as f:
+                debug_info = {
+                    "ref_before": reference_seq[0][:10].tolist() if len(reference_seq[0]) >= 10 else [],
+                    "ref_after": ref_normalized[0][:10].tolist() if len(ref_normalized[0]) >= 10 else [],
+                    "user_before": user_seq[0][:10].tolist() if len(user_seq[0]) >= 10 else [],
+                    "user_after": user_normalized[0][:10].tolist() if len(user_normalized[0]) >= 10 else []
+                }
+                json.dump(debug_info, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"디버그 정보 저장 중 오류: {e}")
+
+    # 동작 구간 추출 (선택적)
     try:
-        ref_movement = _extract_movement_segments(np.array(ref_normalized))
-        user_movement = _extract_movement_segments(np.array(user_normalized))
+        ref_movement = extract_movement_segments(np.array(ref_normalized))
+        user_movement = extract_movement_segments(np.array(user_normalized))
     except Exception as e:
         print(f"동작 구간 추출 중 오류 발생: {e}")
         # 실패 시 정규화된 전체 시퀀스 사용
         ref_movement = ref_normalized
         user_movement = user_normalized
 
-    # 3. DTW 정렬
+    # DTW 정렬
     _, path = fastdtw(ref_movement, user_movement, dist=safe_cosine_similarity)
 
-    # 4. 유사도 계산
+    # 유사도 계산
     similarity_scores = []
     for i, j in path:
         # 인덱스 초과 방지
@@ -201,9 +213,9 @@ def compare_landmark(reference_seq: list[np.ndarray], user_seq: list[np.ndarray]
     if not similarity_scores:
         return 0.0
 
-    # 5. 가중치 적용하여 평균 계산
+    # 가중치 적용하여 평균 계산
     try:
-        weights = _calculate_weights(similarity_scores)
+        weights = calculate_weights(similarity_scores)
         average_similarity = np.average(similarity_scores, weights=weights)
     except Exception as e:
         print(f"가중치 계산 중 오류 발생: {e}")
@@ -212,51 +224,13 @@ def compare_landmark(reference_seq: list[np.ndarray], user_seq: list[np.ndarray]
 
     return round(float(average_similarity), 4)
 
-# 8. 기존 score_to_label 함수 개선 (함수명 동일하게 유지)
+# 8. 점수 라벨 변환 함수
 def score_to_label(score):
-    """
-    개선된 점수 라벨 함수
-    좀 더 관대한 기준으로 조정
-    """
-    if score > 0.8:     # 기존 0.85에서 0.8로 낮춤
+    if score > 0.8:     
         return "perfect"
-    elif score > 0.65:  # 기존 0.7에서 0.65로 낮춤
+    elif score > 0.65:  
         return "great"
-    elif score > 0.45:  # 기존 0.5에서 0.45로 낮춤
+    elif score > 0.45:  
         return "good"
     else:
         return "bad"
-
-# 9. 디버깅용 함수 (선택적)
-def debug_score_calculation(reference_seq, user_seq):
-    """
-    점수 계산 과정을 상세히 로그로 출력
-    """
-    print("=== 점수 계산 디버그 정보 ===")
-    print(f"참조 시퀀스 길이: {len(reference_seq)}")
-    print(f"사용자 시퀀스 길이: {len(user_seq)}")
-    
-    # 정규화 전 샘플 확인
-    if reference_seq and user_seq:
-        print(f"정규화 전 참조 샘플: {reference_seq[0][:5]}...")
-        print(f"정규화 전 사용자 샘플: {user_seq[0][:5]}...")
-    
-    # 정규화 후 샘플 확인
-    try:
-        ref_norm = _normalize_landmarks(reference_seq)
-        user_norm = _normalize_landmarks(user_seq)
-        if ref_norm and user_norm:
-            print(f"정규화 후 참조 샘플: {ref_norm[0][:5]}...")
-            print(f"정규화 후 사용자 샘플: {user_norm[0][:5]}...")
-    except Exception as e:
-        print(f"정규화 중 오류: {e}")
-    
-    # 실제 점수 계산
-    score = compare_landmark(reference_seq, user_seq)
-    label = score_to_label(score)
-    
-    print(f"최종 점수: {score}")
-    print(f"라벨: {label}")
-    print("===========================")
-    
-    return score, label
