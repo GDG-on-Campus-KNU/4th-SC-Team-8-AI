@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from utils.youtube_utils import extract_youtube_stream_url
 from utils.process_video_utils import process_video
-from utils.youtube_subtitle_utils import get_subtitle_text
+from utils.youtube_subtitle_utils import get_manual_subtitle_text
 from models.request_models import YouTubeRequest, SubtitleRequest
 from models.response_models import ProcessResponse, SubtitleResponse, TestResponse
 from utils.similarity_compare_utils import fetch_reference_landmark, fetch_user_landmark, compare_landmark, score_to_label
@@ -74,8 +74,7 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
                 })
                 await websocket.close()
                 return
-            reference_landmark = json.loads(game.landmark)
-                
+            reference_landmark = json.loads(game.landmark)                
         while True:
             data = await websocket.receive_json()
             
@@ -125,12 +124,14 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
 @app.post("/get_subtitle", response_model=SubtitleResponse)
 async def get_subtitle(req: SubtitleRequest):
     try:
-        subtitle_text = get_subtitle_text(req.url, req.lang)
+        subtitle_text = get_manual_subtitle_text(req.url, req.lang)
         if not subtitle_text:
-            raise HTTPException(status_code=404, detail=f"'{req.lang}' 자막이 없습니다.")
-        return {"status": "success", "subtitle": subtitle_text}
+            # 404 에러 대신 status 필드를 통해 실패 응답
+            return {"status": "fail", "message": f"'{req.lang}' 자막이 없습니다.", "subtitle": None}
+        return {"status": "success", "subtitle": subtitle_text, "message": ""}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+        # 500 에러 대신 status 필드를 통해 오류 응답
+        return {"status": "error", "message": str(e), "subtitle": None}
+    
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=5050)

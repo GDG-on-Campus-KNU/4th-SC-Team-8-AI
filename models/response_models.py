@@ -6,8 +6,9 @@ class ProcessResponse(BaseModel):
     video_url: str
 
 class SubtitleResponse(BaseModel):
-    status: str
-    subtitle: dict
+    status: str 
+    subtitle: Optional[dict] = None
+    message: str = ""
 
 class TestResponse(BaseModel):
     status: str

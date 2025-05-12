@@ -6,12 +6,12 @@ from yt_dlp import YoutubeDL
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_subtitle_text(youtube_url: str, lang="ko"):
+def get_manual_subtitle_text(youtube_url: str, lang="ko"):
     ydl_opts = {
         'quiet': True,
-        'writesubtitles': True,
-        'writeautomaticsub': True,
-        'subtitlesformat': 'json3' 
+        'writesubtitles': True,       # 수동 자막만
+        'writeautomaticsub': False,   # 자동 자막 무시
+        'subtitlesformat': 'json3'
     }
 
     with YoutubeDL(ydl_opts) as ydl:
@@ -19,12 +19,10 @@ def get_subtitle_text(youtube_url: str, lang="ko"):
         subtitles = info.get("subtitles", {})
 
         if lang not in subtitles:
-            logger.warning(f"'{lang}' 자막이 없습니다.")
+            logger.warning(f"'{lang}' 수동 자막이 없습니다.")
             return None
 
         subtitle_url = subtitles[lang][0]['url']
-
-        # 자막 JSON 가져오기
         response = requests.get(subtitle_url)
         subtitle_text = response.text
 
@@ -34,5 +32,5 @@ def get_subtitle_text(youtube_url: str, lang="ko"):
             logger.error("자막 JSON 파싱 실패")
             return None
 
-        logger.info(f"'{lang}' 자막 성공적으로 파싱됨")
+        logger.info(f"'{lang}' 수동 자막 성공적으로 파싱됨")
         return subtitle_json
