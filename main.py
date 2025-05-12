@@ -39,8 +39,15 @@ async def process_youtube(req: YouTubeRequest, db: AsyncSession = Depends(get_db
                 "video_url": req.url
             }
 
-        video_url = extract_youtube_stream_url(req.url)
+        # 한글 자막 존재 여부 확인
+        subtitle_json = get_manual_subtitle_text(req.url, lang="ko")
+        if not subtitle_json:
+            return {
+                "status": "no_ko_subtitle",
+                "video_url": req.url
+            }
 
+        video_url = extract_youtube_stream_url(req.url)
         asyncio.create_task(process_video(req.url, video_url))
 
         return {
@@ -50,7 +57,7 @@ async def process_youtube(req: YouTubeRequest, db: AsyncSession = Depends(get_db
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 @app.websocket("/ws/landmark")
 async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
     await websocket.accept()
@@ -87,8 +94,8 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
             user = fetch_user_landmark(user_landmark)
             score = compare_landmark(reference, user)
 
-            print("reference", len(reference))
-            print("user", len(user))
+            logger.info(f"reference: {len(reference)}")
+            logger.info(f"user: {len(user)}") 
             
             label = score_to_label(score)
             scores.append(score)
@@ -112,13 +119,13 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
                 break
 
     except Exception as e:
-        print("WebSocket error:", e)
+        logger.error("WebSocket error:", e)
     finally:
         try:
             await websocket.close()
         except RuntimeError:
             pass 
-        print("WebSocket 정상 종료")
+        logger.info("WebSocket 정상 종료")
 
 
 @app.post("/get_subtitle", response_model=SubtitleResponse)
@@ -126,11 +133,11 @@ async def get_subtitle(req: SubtitleRequest):
     try:
         subtitle_text = get_manual_subtitle_text(req.url, req.lang)
         if not subtitle_text:
-            # 404 에러 대신 status 필드를 통해 실패 응답
             return {"status": "fail", "message": f"'{req.lang}' 자막이 없습니다.", "subtitle": None}
+        
         return {"status": "success", "subtitle": subtitle_text, "message": ""}
+    
     except Exception as e:
-        # 500 에러 대신 status 필드를 통해 오류 응답
         return {"status": "error", "message": str(e), "subtitle": None}
     
 if __name__ == "__main__":

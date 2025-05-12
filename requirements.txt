@@ -8,5 +8,6 @@ dotenv==0.9.9
 requests==2.32.3
 asyncmy==0.2.10
 fastdtw==0.3.4
- 
+aiohttp==3.11.18
+
 git+https://github.com/yt-dlp/yt-dlp.git

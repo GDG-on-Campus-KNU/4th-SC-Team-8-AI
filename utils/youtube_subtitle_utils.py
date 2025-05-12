@@ -1,10 +1,7 @@
 import requests
 import json
-import logging
+from utils.logging_utils import logger
 from yt_dlp import YoutubeDL
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def get_manual_subtitle_text(youtube_url: str, lang="ko"):
     ydl_opts = {

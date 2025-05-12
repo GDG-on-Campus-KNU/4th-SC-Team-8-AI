@@ -123,7 +123,7 @@
           events: { onReady: () => pollSubtitleTime() }
         });
 
-      fetch("http://localhost:8000/get_subtitle", {
+      fetch("http://localhost:5050/get_subtitle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, lang: "ko" })
@@ -252,7 +252,7 @@
     });
 
     function startWebSocket(vUrl) {
-      socket = new WebSocket("ws://localhost:8000/ws/landmark?video_url=" + encodeURIComponent(vUrl));
+      socket = new WebSocket("ws://localhost:5050/ws/landmark?video_url=" + encodeURIComponent(vUrl));
       socket.onmessage = e => {
         const msg = JSON.parse(e.data);
         if (msg.sentence_score !== undefined && msg.sentence_label !== undefined) {
