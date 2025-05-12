@@ -11695,3 +11695,37 @@ INFO:     35.191.232.162:48734 - "GET /test HTTP/1.1" 200 OK
 INFO:     35.191.232.165:46194 - "GET /test HTTP/1.1" 200 OK
 INFO:     35.191.205.48:54752 - "GET /test HTTP/1.1" 200 OK
 INFO:     35.191.232.162:55810 - "GET /test HTTP/1.1" 200 OK
+INFO:     35.191.232.165:60810 - "GET /test HTTP/1.1" 200 OK
+INFO:     35.191.205.48:33910 - "GET /test HTTP/1.1" 200 OK
+INFO:     35.191.232.162:33046 - "GET /test HTTP/1.1" 200 OK
+INFO:     35.191.232.165:33398 - "GET /test HTTP/1.1" 200 OK
+INFO:     35.191.205.48:58348 - "GET /test HTTP/1.1" 200 OK
+INFO:     35.191.232.162:40872 - "GET /test HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'utils/youtube_subtitle_utils.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [362830]
+INFO:     Started server process [393721]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'utils/similarity_compare_utils.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [393721]
+WARNING:  StatReload detected changes in 'utils/similarity_compare_utils.py'. Reloading...
+INFO:     Started server process [393767]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Started server process [393793]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [393793]
+INFO:     Started server process [393825]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
