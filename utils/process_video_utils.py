@@ -88,6 +88,7 @@ async def process_video(request_url: str, video_url: str):
 
     if error_during_processing or not processed_frames:
         logger.warning(f"{prefix} [처리 실패] 프레임 처리 중 오류로 인해 DB 저장 및 이메일 전송 생략")
+        await send_mail_notification(request_url, status="FAIL")  # 실패 시 FAIL 전송
         return
 
     total_time = time.time() - start_time
@@ -118,4 +119,4 @@ async def process_video(request_url: str, video_url: str):
             await db.rollback()
             logger.error(f"{prefix} [DB 저장 실패] {e}", exc_info=True)
 
-    await send_mail_notification(request_url)
+    await send_mail_notification(request_url, status="SUCCESS") 
