@@ -32,6 +32,7 @@ async def test_endpoint():
 @app.post("/process_youtube", response_model=ProcessResponse)
 async def process_youtube(req: YouTubeRequest, db: AsyncSession = Depends(get_db)):
     try:
+        # 이미 처리된 영상인지 여부 확인
         existing_game = await get_game_by_url(db, youtube_link=req.url)
         if existing_game:
             return {
@@ -52,7 +53,7 @@ async def process_youtube(req: YouTubeRequest, db: AsyncSession = Depends(get_db
 
         return {
             "status": "processing started",
-            "video_url": video_url
+            "video_url": req.url
         }
 
     except Exception as e:

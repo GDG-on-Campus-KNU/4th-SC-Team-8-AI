@@ -4,7 +4,6 @@ import time
 import json
 import asyncio
 
-# from utils.landmark_utils import landmark_list_to_dict
 from utils.logging_utils import logger
 from utils.email_utils import send_mail_notification
 from models.request_models import GameCreate
