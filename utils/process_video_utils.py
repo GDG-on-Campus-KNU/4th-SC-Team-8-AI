@@ -52,20 +52,20 @@ async def process_video(request_url: str, video_url: str):
             image_rgb = await asyncio.to_thread(cv2.cvtColor, frame, cv2.COLOR_BGR2RGB)
             results = await asyncio.to_thread(holistic.process, image_rgb)
 
-            pose_lm = results.pose_landmarks.landmark if results.pose_landmarks else []
-            face_lm = results.face_landmarks.landmark if results.face_landmarks else []
+            # pose_lm = results.pose_landmarks.landmark if results.pose_landmarks else []
+            # face_lm = results.face_landmarks.landmark if results.face_landmarks else []
             left_lm = results.left_hand_landmarks.landmark if results.left_hand_landmarks else []
             right_lm = results.right_hand_landmarks.landmark if results.right_hand_landmarks else []
 
             nose_x, nose_y = 0.5, 0.5
-            if face_lm:
-                nose_x, nose_y = face_lm[1].x, face_lm[1].y
-            elif pose_lm:
-                nose_x, nose_y = pose_lm[0].x, pose_lm[0].y
+            # if face_lm:
+            #     nose_x, nose_y = face_lm[1].x, face_lm[1].y
+            # elif pose_lm:
+            #     nose_x, nose_y = pose_lm[0].x, pose_lm[0].y
 
             offset_x, offset_y = 0.5 - nose_x, 0.5 - nose_y
             all_lm = []
-            for lm in [pose_lm, face_lm, left_lm, right_lm]:
+            for lm in [left_lm, right_lm]:
                 if lm:
                     all_lm.extend(lm)
             if all_lm:
@@ -117,4 +117,3 @@ async def process_video(request_url: str, video_url: str):
             await db.rollback()
             logger.error(f"[DB 저장 실패] {e}", exc_info=True)
             
-    ### 이메일 요청 구현 필요 ###

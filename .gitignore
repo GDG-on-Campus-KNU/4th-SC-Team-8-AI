@@ -33,3 +33,4 @@ dist/
 .coverage
 .cache/
 pytest_cache/
+nohup.out
