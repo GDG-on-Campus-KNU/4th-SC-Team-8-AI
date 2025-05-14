@@ -225,11 +225,11 @@ def compare_landmark(reference_seq: list[np.ndarray], user_seq: list[np.ndarray]
 
 # 8. 점수 라벨 변환 함수
 def score_to_label(score):
-    if score > 0.8:     
+    if score > 0.65:
         return "perfect"
-    elif score > 0.65:  
+    elif score > 0.5:
         return "great"
-    elif score > 0.45:  
+    elif score > 0.3:
         return "good"
     else:
         return "bad"
