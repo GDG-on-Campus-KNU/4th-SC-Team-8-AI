@@ -48,8 +48,11 @@ async def process_youtube(req: YouTubeRequest, db: AsyncSession = Depends(get_db
                 "video_url": req.url
             }
 
-        video_url = extract_youtube_stream_url(req.url)
-        asyncio.create_task(process_video(req.url, video_url))
+        extract_youtube_stream_url(req.url)
+        task = asyncio.create_task(process_video(...))
+        task.add_done_callback(
+            lambda t: logger.error(f"process_video error: {t.exception()}") if t.exception() else None
+        )
 
         return {
             "status": "processing started",
@@ -65,7 +68,6 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
 
     try:
         scores = []
-        labels = []
         label_count = {
             "perfect": 0,
             "great": 0,
@@ -95,12 +97,10 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
             user = fetch_user_landmark(user_landmark)
             score = compare_landmark(reference, user)
 
-            logger.info(f"reference: {len(reference)}")
-            logger.info(f"user: {len(user)}") 
+            logger.info(f"Landmark comparison - reference: {len(reference)} frames, user: {len(user)} frames")
             
             label = score_to_label(score)
             scores.append(score)
-            labels.append(label)
 
             if label in label_count:
                 label_count[label] += 1
@@ -120,7 +120,7 @@ async def landmark_socket(websocket: WebSocket, video_url: str = Query(...)):
                 break
 
     except Exception as e:
-        logger.error("WebSocket error:", e)
+        logger.error(f"WebSocket error: {e}")
     finally:
         try:
             await websocket.close()
