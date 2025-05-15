@@ -30,10 +30,10 @@ Recently, Nvidia launched 'Signs,' a new service offering active feedback for le
 Our project, ‘Signory’ offers you opportunity to learn sentence-level actions through korean sign language-based videos with subtitles, and you can also check how accurate the actions are through similarity score. It's designed to handle the full vocabulary present in any Korean subtitled video, without relying on a pre-existing list.
 
 ## System Architecture
-![System Architecture](images/architecture.png)
+![System Architecture](assets/architecture.png)
 
 ## Use Case Diagram
-![Use Case Diagram](images/use_case.png)
+![Use Case Diagram](assets/use_case.png)
 
 ## Key Features
 ### 1. Register YouTube video-based sign language learning videos
