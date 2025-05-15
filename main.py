@@ -48,8 +48,8 @@ async def process_youtube(req: YouTubeRequest, db: AsyncSession = Depends(get_db
                 "video_url": req.url
             }
 
-        extract_youtube_stream_url(req.url)
-        task = asyncio.create_task(process_video(...))
+        video_url = extract_youtube_stream_url(req.url)
+        task = asyncio.create_task(process_video(req.url, video_url))
         task.add_done_callback(
             lambda t: logger.error(f"process_video error: {t.exception()}") if t.exception() else None
         )
